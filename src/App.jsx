@@ -41,6 +41,9 @@ function App() {
       if (response.success) {
         setAllSheets({ sheets: response.sheets, totalSheets: response.totalSheets });
         setAvailableSheets(Object.keys(response.sheets));
+        if (response.fromCache) {
+          console.log('Data loaded from cache');
+        }
       } else {
         throw new Error(response.error);
       }

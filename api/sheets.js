@@ -1,4 +1,18 @@
+// api/sheets.js - Vercel Serverless Function with Caching
 import { google } from 'googleapis';
+
+// Simple in-memory cache (works for serverless functions)
+let cache = {
+  allSheets: null,
+  sheetData: new Map(),
+  timestamp: null
+};
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+
+function isCacheValid() {
+  return cache.timestamp && (Date.now() - cache.timestamp) < CACHE_DURATION;
+}
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -35,30 +49,79 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const { action, sheetName, all } = req.query;
       
-      // Get all sheets with data
+      // Get all sheets with data - CHECK CACHE FIRST
       if (all === 'true' || action === 'getAllSheets') {
+        // Return cached data if valid
+        if (isCacheValid() && cache.allSheets) {
+          console.log('Returning cached all sheets data');
+          return res.json({ 
+            success: true, 
+            sheets: cache.allSheets.data,
+            totalSheets: cache.allSheets.totalSheets,
+            fromCache: true
+          });
+        }
+        
+        console.log('Fetching fresh data from Google Sheets API');
+        
         const metadata = await sheets.spreadsheets.get({ spreadsheetId });
         const sheetsList = metadata.data.sheets || [];
         const result = {};
         
-        for (const sheet of sheetsList) {
+        // Process sheets one by one to avoid quota issues
+        for (let i = 0; i < sheetsList.length; i++) {
+          const sheet = sheetsList[i];
           const name = sheet.properties.title;
-          const response = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: `'${name}'!A1:Z1000`,
-          });
-          const data = response.data.values || [];
-          const headers = data[0] || [];
-          const rows = data.slice(1);
           
-          result[name] = { headers, data: rows, totalRecords: rows.length };
+          try {
+            const response = await sheets.spreadsheets.values.get({
+              spreadsheetId,
+              range: `'${name}'!A1:Z1000`,
+            });
+            const data = response.data.values || [];
+            const headers = data[0] || [];
+            const rows = data.slice(1);
+            
+            result[name] = { headers, data: rows, totalRecords: rows.length };
+          } catch (sheetError) {
+            console.error(`Error fetching sheet ${name}:`, sheetError.message);
+            result[name] = { headers: [], data: [], totalRecords: 0, error: sheetError.message };
+          }
+          
+          // Add delay between requests to avoid rate limiting
+          if (i < sheetsList.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
         }
+        
+        // Update cache
+        cache.allSheets = {
+          data: result,
+          totalSheets: sheetsList.length
+        };
+        cache.timestamp = Date.now();
         
         return res.json({ success: true, sheets: result, totalSheets: sheetsList.length });
       }
       
-      // Get specific sheet data
+      // Get specific sheet data - CHECK CACHE FIRST
       if (sheetName) {
+        // Check if we have cached data for this sheet
+        const cachedSheet = cache.sheetData.get(sheetName);
+        if (cachedSheet && (Date.now() - cachedSheet.timestamp) < CACHE_DURATION) {
+          console.log(`Returning cached data for sheet: ${sheetName}`);
+          return res.json({ 
+            success: true, 
+            sheetName, 
+            headers: cachedSheet.headers,
+            data: cachedSheet.data,
+            totalRecords: cachedSheet.totalRecords,
+            fromCache: true
+          });
+        }
+        
+        console.log(`Fetching fresh data for sheet: ${sheetName}`);
+        
         const response = await sheets.spreadsheets.values.get({
           spreadsheetId,
           range: `'${sheetName}'!A1:Z1000`,
@@ -67,17 +130,30 @@ export default async function handler(req, res) {
         const headers = data[0] || [];
         const rows = data.slice(1);
         
+        // Cache the sheet data
+        cache.sheetData.set(sheetName, {
+          headers: headers,
+          data: rows,
+          totalRecords: rows.length,
+          timestamp: Date.now()
+        });
+        
         return res.json({ success: true, sheetName, headers, data: rows, totalRecords: rows.length });
       }
       
-      // Get sheet names only
+      // Get sheet names only - CHECK CACHE FIRST
+      if (isCacheValid() && cache.allSheets) {
+        const sheetNames = Object.keys(cache.allSheets.data);
+        return res.json({ success: true, sheets: sheetNames, fromCache: true });
+      }
+      
       const metadata = await sheets.spreadsheets.get({ spreadsheetId });
       const sheetNames = (metadata.data.sheets || []).map(s => s.properties.title);
       
       return res.json({ success: true, sheets: sheetNames });
     }
     
-    // Handle POST requests (write operations)
+    // Handle POST requests (write operations) - INVALIDATE CACHE
     if (req.method === 'POST') {
       const { action, sheetName, record, rowNumber, records } = req.body;
       
@@ -96,6 +172,11 @@ export default async function handler(req, res) {
           insertDataOption: 'INSERT_ROWS',
           resource: { values: [newRow] },
         });
+        
+        // Invalidate cache for this sheet
+        cache.sheetData.delete(sheetName);
+        cache.allSheets = null;
+        cache.timestamp = null;
         
         return res.json({ success: true, message: 'Record added successfully' });
       }
@@ -121,6 +202,11 @@ export default async function handler(req, res) {
           resource: { values: [updateRow] },
         });
         
+        // Invalidate cache for this sheet
+        cache.sheetData.delete(sheetName);
+        cache.allSheets = null;
+        cache.timestamp = null;
+        
         return res.json({ success: true, message: 'Record updated successfully' });
       }
       
@@ -129,6 +215,11 @@ export default async function handler(req, res) {
           spreadsheetId,
           range: `'${sheetName}'!A${rowNumber}:Z${rowNumber}`,
         });
+        
+        // Invalidate cache for this sheet
+        cache.sheetData.delete(sheetName);
+        cache.allSheets = null;
+        cache.timestamp = null;
         
         return res.json({ success: true, message: 'Record deleted successfully' });
       }
@@ -139,6 +230,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   } catch (error) {
     console.error('API Error:', error);
+    // Return cached data if available when quota exceeded
+    if (error.message.includes('Quota exceeded') && cache.allSheets) {
+      console.log('Quota exceeded, returning cached data');
+      return res.json({ 
+        success: true, 
+        sheets: cache.allSheets.data,
+        totalSheets: cache.allSheets.totalSheets,
+        fromCache: true,
+        warning: 'Using cached data due to API quota limits'
+      });
+    }
     return res.status(500).json({ success: false, error: error.message });
   }
 }
