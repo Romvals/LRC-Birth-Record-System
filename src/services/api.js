@@ -1,12 +1,17 @@
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbysbIEta7KlFyrYuKoPtOCV1dwYSPRNcyG89fhenKmMZjz5Br2B80oPKM1vbzNcCQRx/exec';
+// src/services/api.js
+// Use Vercel Serverless API for all operations
 
 class LCRAPI {
-  async request(method = 'GET', data = null) {
-    let url = APPS_SCRIPT_URL;
+  constructor() {
+    this.baseUrl = '/api/sheets';
+  }
+
+  async request(endpoint, method = 'GET', data = null) {
+    let url = `${this.baseUrl}${endpoint}`;
     
     if (method === 'GET' && data) {
       const params = new URLSearchParams(data);
-      url = `${APPS_SCRIPT_URL}?${params.toString()}`;
+      url = `${this.baseUrl}?${params.toString()}`;
     }
     
     const options = {
@@ -31,23 +36,15 @@ class LCRAPI {
   }
 
   async getAllSheets() {
-    return this.request('GET', { action: 'getAllSheets' });
+    return this.request('/?all=true', 'GET');
   }
 
   async getSheetData(sheetName) {
-    return this.request('GET', { action: 'getSheetData', sheetName: sheetName });
-  }
-
-  async getSheetNames() {
-    return this.request('GET', { action: 'getSheetNames' });
-  }
-
-  async getStats() {
-    return this.request('GET', { action: 'getStats' });
+    return this.request(`/?sheetName=${encodeURIComponent(sheetName)}`, 'GET');
   }
 
   async addRecord(sheetName, record) {
-    return this.request('POST', {
+    return this.request('/', 'POST', {
       action: 'addRecord',
       sheetName: sheetName,
       record: record
@@ -55,7 +52,7 @@ class LCRAPI {
   }
 
   async updateRecord(sheetName, rowNumber, record) {
-    return this.request('POST', {
+    return this.request('/', 'POST', {
       action: 'updateRecord',
       sheetName: sheetName,
       rowNumber: rowNumber,
@@ -64,18 +61,10 @@ class LCRAPI {
   }
 
   async deleteRecord(sheetName, rowNumber) {
-    return this.request('POST', {
+    return this.request('/', 'POST', {
       action: 'deleteRecord',
       sheetName: sheetName,
       rowNumber: rowNumber
-    });
-  }
-
-  async bulkAddRecords(sheetName, records) {
-    return this.request('POST', {
-      action: 'bulkAdd',
-      sheetName: sheetName,
-      records: records
     });
   }
 }
