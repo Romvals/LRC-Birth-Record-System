@@ -1,0 +1,1410 @@
+import { useEffect, useState } from "react";
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  Area
+} from 'recharts';
+import api from './services/api';
+import "./index.css";
+
+function App() {
+  const [allSheets, setAllSheets] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeSheet, setActiveSheet] = useState(null);
+  const [activeView, setActiveView] = useState("dashboard");
+  const [selectedRecord, setSelectedRecord] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [editingRowNumber, setEditingRowNumber] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isAllBooks, setIsAllBooks] = useState(false);
+  const [formData, setFormData] = useState({});
+  const [availableSheets, setAvailableSheets] = useState([]);
+  const [selectedSheetForAdd, setSelectedSheetForAdd] = useState("");
+  const [addFormHeaders, setAddFormHeaders] = useState([]);
+
+  useEffect(() => {
+    fetchAllSheets();
+  }, []);
+
+  const fetchAllSheets = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await api.getAllSheets();
+      
+      if (response.success) {
+        setAllSheets({ sheets: response.sheets, totalSheets: response.totalSheets });
+        setAvailableSheets(Object.keys(response.sheets));
+      } else {
+        throw new Error(response.error);
+      }
+    } catch (err) {
+      console.error("Fetch all sheets failed:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSpecificSheet = async (sheetName) => {
+    try {
+      setLoading(true);
+      setError(null);
+      setIsAllBooks(false);
+      
+      const response = await api.getSheetData(sheetName);
+      
+      if (response.success) {
+        const data = [response.headers, ...response.data];
+        setActiveSheet({
+          name: sheetName,
+          data: data
+        });
+        setActiveView("sheet");
+        setSelectedMonth("all");
+        setSearchTerm("");
+      } else {
+        throw new Error(response.error);
+      }
+    } catch (err) {
+      console.error(`Fetch sheet "${sheetName}" failed:`, err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAllBooks = async () => {
+    if (!allSheets || !allSheets.sheets) return;
+    
+    const allData = [];
+    let headers = null;
+    
+    const sortedSheets = Object.keys(allSheets.sheets).sort();
+    
+    for (const sheetName of sortedSheets) {
+      const sheetData = allSheets.sheets[sheetName];
+      if (sheetData && sheetData.data && sheetData.data.length > 0) {
+        if (!headers) {
+          headers = ['Book Name', ...(sheetData.headers || [])];
+        }
+        
+        for (let i = 0; i < sheetData.data.length; i++) {
+          const row = [sheetName, ...(sheetData.data[i] || [])];
+          allData.push(row);
+        }
+      }
+    }
+    
+    if (headers && allData.length > 0) {
+      const combinedData = [headers, ...allData];
+      setActiveSheet({
+        name: "ALL REGISTRY BOOKS",
+        data: combinedData
+      });
+      setActiveView("sheet");
+      setIsAllBooks(true);
+      setSelectedMonth("all");
+      setSearchTerm("");
+    } else {
+      console.error("No data available for All Books view");
+      alert("Unable to load All Registry Books. Please refresh the page and try again.");
+    }
+  };
+
+  const goToDashboard = () => {
+    setActiveView("dashboard");
+    setActiveSheet(null);
+    setSelectedMonth("all");
+    setSearchTerm("");
+    setIsAllBooks(false);
+  };
+
+  const openModal = (record) => {
+    setSelectedRecord(record);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedRecord(null);
+  };
+
+  const openAddModal = () => {
+    setFormData({});
+    
+    if (isAllBooks) {
+      // For All Registry Books, show sheet selector first
+      setSelectedSheetForAdd("");
+      setAddFormHeaders([]);
+      setIsAddModalOpen(true);
+    } else {
+      // For specific book, show form directly with that sheet's headers
+      const headers = activeSheet?.data?.[0] || [];
+      const emptyForm = {};
+      headers.forEach(header => {
+        emptyForm[header] = '';
+      });
+      setFormData(emptyForm);
+      setSelectedSheetForAdd(activeSheet?.name || "");
+      setIsAddModalOpen(true);
+    }
+  };
+
+  const handleSheetSelectionChange = async (sheetName) => {
+    if (!sheetName) {
+      setAddFormHeaders([]);
+      setSelectedSheetForAdd("");
+      return;
+    }
+    
+    try {
+      const response = await api.getSheetData(sheetName);
+      if (response.success && response.headers) {
+        setAddFormHeaders(response.headers);
+        setSelectedSheetForAdd(sheetName);
+        // Reset form data
+        const emptyForm = {};
+        response.headers.forEach(header => {
+          emptyForm[header] = '';
+        });
+        setFormData(emptyForm);
+      }
+    } catch (err) {
+      console.error("Error fetching sheet headers:", err);
+      alert("Could not load sheet data. Please try again.");
+    }
+  };
+
+  const closeAddModal = () => {
+    setIsAddModalOpen(false);
+    setFormData({});
+    setSelectedSheetForAdd("");
+    setAddFormHeaders([]);
+  };
+
+  const handleAddRecord = async () => {
+    try {
+      const sheetName = selectedSheetForAdd;
+      if (!sheetName) {
+        alert("Please select a registry book");
+        return;
+      }
+      
+      const response = await api.addRecord(sheetName, formData);
+      
+      if (response.success) {
+        alert(`Record added successfully to ${sheetName}!`);
+        closeAddModal();
+        
+        // Refresh the current view
+        if (isAllBooks) {
+          await fetchAllBooks();
+        } else if (activeSheet) {
+          await fetchSpecificSheet(activeSheet.name);
+        }
+        await fetchAllSheets(); // Update stats
+      } else {
+        alert("Error: " + response.error);
+      }
+    } catch (err) {
+      alert("Error adding record: " + err.message);
+    }
+  };
+
+  const openEditModal = (record, rowNumber) => {
+    console.log("Opening edit modal for row:", rowNumber);
+    console.log("Record data received:", record);
+    
+    // The record already contains fullRecord which is the array of values
+    // and headers which is the array of column names
+    if (record && record.fullRecord && record.headers) {
+      // Create an object mapping headers to values
+      const recordObject = {};
+      record.headers.forEach((header, idx) => {
+        recordObject[header] = record.fullRecord[idx] || '';
+      });
+      
+      console.log("Converted record object:", recordObject);
+      
+      setEditingRecord({
+        ...record,
+        fullRecord: recordObject,
+        originalFullRecord: record.fullRecord // Keep original for debugging
+      });
+      setEditingRowNumber(rowNumber);
+      setIsEditModalOpen(true);
+    } else {
+      console.error("Invalid record data:", record);
+      alert("Error loading record data for editing");
+    }
+  };
+
+  const closeEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditingRecord(null);
+    setEditingRowNumber(null);
+  };
+
+  const handleUpdateRecord = async () => {
+    try {
+      const sheetName = isAllBooks ? editingRecord.bookName : activeSheet?.name;
+      if (sheetName === 'ALL' || !sheetName) {
+        alert("Please select a specific book to edit records");
+        return;
+      }
+      
+      // Convert the object back to an array matching the header order
+      const headers = editingRecord.headers;
+      const recordArray = [];
+      for (let i = 0; i < headers.length; i++) {
+        const header = headers[i];
+        if (isAllBooks && header === 'Book Name') {
+          // Skip Book Name in the array since it's not in the original sheet
+          continue;
+        }
+        recordArray.push(editingRecord.fullRecord[header] || '');
+      }
+      
+      // If we skipped Book Name, we need to adjust
+      let finalRecordArray = recordArray;
+      if (isAllBooks) {
+        // The original headers don't have Book Name, so recordArray is correct
+      }
+      
+      console.log(`Updating row ${editingRowNumber} in sheet ${sheetName}`);
+      console.log("Record array:", finalRecordArray);
+      
+      const response = await api.updateRecord(sheetName, editingRowNumber, finalRecordArray);
+      
+      if (response.success) {
+        alert("Record updated successfully!");
+        closeEditModal();
+        // Refresh the current view
+        if (isAllBooks) {
+          await fetchAllBooks();
+        } else {
+          await fetchSpecificSheet(sheetName);
+        }
+        await fetchAllSheets(); // Update stats
+      } else {
+        alert("Error: " + response.error);
+      }
+    } catch (err) {
+      alert("Error updating record: " + err.message);
+    }
+  };
+
+  const handleDeleteRecord = async (sheetName, rowNumber) => {
+    if (!confirm("Are you sure you want to delete this record? This action cannot be undone.")) {
+      return;
+    }
+    
+    try {
+      const response = await api.deleteRecord(sheetName, rowNumber);
+      
+      if (response.success) {
+        alert("Record deleted successfully!");
+        closeEditModal();
+        await fetchSpecificSheet(sheetName);
+      } else {
+        alert("Error: " + response.error);
+      }
+    } catch (err) {
+      alert("Error deleting record: " + err.message);
+    }
+  };
+
+  const refreshData = async () => {
+    setLoading(true);
+    try {
+      await fetch('http://localhost:3001/api/sheets/clear-cache', { method: 'POST' });
+      await fetchAllSheets();
+      if (activeView === "sheet" && activeSheet && !isAllBooks && activeSheet.name !== "ALL REGISTRY BOOKS") {
+        await fetchSpecificSheet(activeSheet.name);
+      } else if (isAllBooks) {
+        await fetchAllBooks();
+      }
+    } catch (err) {
+      console.error("Refresh failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getSheetNames = () => {
+    if (!allSheets || !allSheets.sheets) return [];
+    return Object.keys(allSheets.sheets).sort();
+  };
+
+  const getDashboardStats = () => {
+    if (!allSheets || !allSheets.sheets) return { totalSheets: 0, totalRecords: 0, recentSheets: [] };
+    
+    const sheets = allSheets.sheets;
+    const sheetNames = Object.keys(sheets);
+    let totalRecords = 0;
+    
+    sheetNames.forEach(sheetName => {
+      totalRecords += sheets[sheetName].totalRecords || 0;
+    });
+    
+    const recentSheets = [...sheetNames].sort().reverse().slice(0, 5);
+    
+    return {
+      totalSheets: sheetNames.length,
+      totalRecords,
+      recentSheets
+    };
+  };
+
+  const extractMonth = (dateString) => {
+    if (!dateString) return null;
+    
+    const months = {
+      'JANUARY': 1, 'JAN': 1,
+      'FEBRUARY': 2, 'FEB': 2,
+      'MARCH': 3, 'MAR': 3,
+      'APRIL': 4, 'APR': 4,
+      'MAY': 5,
+      'JUNE': 6, 'JUN': 6,
+      'JULY': 7, 'JUL': 7,
+      'AUGUST': 8, 'AUG': 8,
+      'SEPTEMBER': 9, 'SEP': 9,
+      'OCTOBER': 10, 'OCT': 10,
+      'NOVEMBER': 11, 'NOV': 11,
+      'DECEMBER': 12, 'DEC': 12
+    };
+    
+    const upperDate = dateString.toUpperCase();
+    for (const [monthName, monthNum] of Object.entries(months)) {
+      if (upperDate.includes(monthName)) {
+        return monthNum;
+      }
+    }
+    return null;
+  };
+
+  const matchesSearch = (row, searchTerm) => {
+    if (!searchTerm || searchTerm.trim() === "") return true;
+    
+    const term = searchTerm.toLowerCase().trim();
+    return row.some(cell => 
+      cell && cell.toString().toLowerCase().includes(term)
+    );
+  };
+
+  const getDisplayRows = (data) => {
+    if (!data || data.length <= 1) return [];
+    
+    const headers = data[0] || [];
+    const rows = data.slice(1);
+    
+    let bookIndex, pageIndex, lcrIndex, regDateIndex, childNameIndex;
+    
+    if (isAllBooks) {
+      const originalHeaders = headers.slice(1);
+      const originalBookIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('book') && !h?.toString().toLowerCase().includes('book name'));
+      const originalPageIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('page'));
+      const originalLcrIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('lcr') || h?.toString().toLowerCase().includes('registry'));
+      const originalRegDateIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
+      const originalChildNameIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('name of child'));
+      
+      bookIndex = originalBookIndex !== -1 ? originalBookIndex + 1 : -1;
+      pageIndex = originalPageIndex !== -1 ? originalPageIndex + 1 : -1;
+      lcrIndex = originalLcrIndex !== -1 ? originalLcrIndex + 1 : -1;
+      regDateIndex = originalRegDateIndex !== -1 ? originalRegDateIndex + 1 : -1;
+      childNameIndex = originalChildNameIndex !== -1 ? originalChildNameIndex + 1 : -1;
+    } else {
+      bookIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('book') && !h?.toString().toLowerCase().includes('book name'));
+      pageIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('page'));
+      lcrIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('lcr') || h?.toString().toLowerCase().includes('registry'));
+      regDateIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
+      childNameIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('name of child'));
+    }
+    
+    let filteredRows = rows;
+    
+    if (selectedMonth !== "all" && regDateIndex !== -1) {
+      filteredRows = filteredRows.filter(row => {
+        const registrationDate = row[regDateIndex];
+        const month = extractMonth(registrationDate);
+        return month === parseInt(selectedMonth);
+      });
+    }
+    
+    if (searchTerm && searchTerm.trim() !== "") {
+      filteredRows = filteredRows.filter(row => matchesSearch(row, searchTerm));
+    }
+    
+    // IMPORTANT: rowNumber should be the actual row number in Google Sheets
+    // Row 1 is headers, so data row 1 in array = row 2 in sheet
+    // We need to find the original index in the unfiltered rows
+    return filteredRows.map((row, idx) => {
+      // Find the original index of this row in the full rows array
+      const originalIndex = rows.findIndex(r => r === row);
+      // rowNumber = originalIndex + 2 (because row 0 in rows array = row 2 in sheet)
+      const rowNumber = originalIndex + 2;
+      
+      return {
+        bookName: isAllBooks && row[0] ? row[0] : null,
+        book: bookIndex !== -1 ? (row[bookIndex] || '') : '',
+        page: pageIndex !== -1 ? (row[pageIndex] || '') : '',
+        lcrNumber: lcrIndex !== -1 ? (row[lcrIndex] || '') : '',
+        registrationDate: regDateIndex !== -1 ? (row[regDateIndex] || '') : '',
+        childName: childNameIndex !== -1 ? (row[childNameIndex] || '') : '',
+        fullRecord: row,
+        headers: headers,
+        rowNumber: rowNumber
+      };
+    });
+  };
+
+  const getAvailableMonths = (data) => {
+    if (!data || data.length <= 1) return [];
+    
+    const headers = data[0] || [];
+    const rows = data.slice(1);
+    let regDateIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
+    
+    if (isAllBooks && regDateIndex !== -1) {
+      regDateIndex = regDateIndex + 1;
+    }
+    
+    if (regDateIndex === -1) return [];
+    
+    const monthsSet = new Set();
+    rows.forEach(row => {
+      const registrationDate = row[regDateIndex];
+      const month = extractMonth(registrationDate);
+      if (month) {
+        monthsSet.add(month);
+      }
+    });
+    
+    const monthNames = {
+      1: 'January', 2: 'February', 3: 'March', 4: 'April',
+      5: 'May', 6: 'June', 7: 'July', 8: 'August',
+      9: 'September', 10: 'October', 11: 'November', 12: 'December'
+    };
+    
+    return Array.from(monthsSet)
+      .sort((a, b) => a - b)
+      .map(month => ({ value: month, label: monthNames[month] }));
+  };
+
+  const getMonthlyDistribution = () => {
+    if (!allSheets || !allSheets.sheets) return [];
+    
+    const monthCount = {};
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    Object.keys(allSheets.sheets).forEach(sheetName => {
+      const sheetData = allSheets.sheets[sheetName];
+      if (sheetData && sheetData.data) {
+        const headers = sheetData.headers;
+        const regDateIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
+        
+        for (let i = 0; i < sheetData.data.length; i++) {
+          const dateStr = sheetData.data[i][regDateIndex];
+          const month = extractMonth(dateStr);
+          if (month) {
+            monthCount[month] = (monthCount[month] || 0) + 1;
+          }
+        }
+      }
+    });
+    
+    return monthNames.map((name, index) => ({
+      month: name,
+      registrations: monthCount[index + 1] || 0
+    }));
+  };
+
+  const getYearlyDistribution = () => {
+    if (!allSheets || !allSheets.sheets) return [];
+    
+    const yearCount = {};
+    
+    Object.keys(allSheets.sheets).forEach(sheetName => {
+      const yearMatch = sheetName.match(/\d{4}/);
+      if (yearMatch) {
+        const year = yearMatch[0];
+        const recordCount = allSheets.sheets[sheetName].totalRecords || 0;
+        yearCount[year] = (yearCount[year] || 0) + recordCount;
+      }
+    });
+    
+    return Object.entries(yearCount)
+      .sort((a, b) => a[0] - b[0])
+      .map(([year, count]) => ({ year, count }));
+  };
+
+  const getGenderDistribution = () => {
+    if (!allSheets || !allSheets.sheets) return [];
+    
+    let male = 0, female = 0;
+    
+    Object.keys(allSheets.sheets).forEach(sheetName => {
+      const sheetData = allSheets.sheets[sheetName];
+      if (sheetData && sheetData.data && sheetData.data.length > 0) {
+        const headers = sheetData.headers;
+        const sexIndex = headers.findIndex(h => {
+          const headerLower = h?.toString().toLowerCase().trim();
+          return headerLower === 'sex' || 
+                headerLower === 'gender' || 
+                headerLower.includes('sex') ||
+                headerLower.includes('gender');
+        });
+        
+        if (sexIndex !== -1) {
+          for (let i = 0; i < sheetData.data.length; i++) {
+            const sexValue = sheetData.data[i][sexIndex];
+            if (sexValue) {
+              const sex = sexValue.toString().trim().toUpperCase();
+              
+              if (sex === 'MALE' || sex === 'M' || sex.includes('MALE')) {
+                male++;
+              } 
+              else if (sex === 'FEMALE' || sex === 'F' || sex.includes('FEMALE')) {
+                female++;
+              }
+              else if (sex.replace(/\s/g, '') === 'MALE') {
+                male++;
+              }
+              else if (sex.replace(/\s/g, '') === 'FEMALE') {
+                female++;
+              }
+            }
+          }
+        } else {
+          for (let i = 0; i < sheetData.data.length; i++) {
+            const row = sheetData.data[i];
+            for (let j = 0; j < row.length; j++) {
+              const cell = row[j]?.toString().trim().toUpperCase();
+              if (cell === 'MALE') {
+                male++;
+                break;
+              } else if (cell === 'FEMALE') {
+                female++;
+                break;
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    if (male === 0 && female === 0) {
+      return [
+        { name: 'Male', value: 1, color: '#3b82f6' },
+        { name: 'Female', value: 1, color: '#ec4899' }
+      ];
+    }
+    
+    return [
+      { name: 'Male', value: male, color: '#3b82f6' },
+      { name: 'Female', value: female, color: '#ec4899' }
+    ];
+  };
+
+  const getTopBooks = () => {
+    if (!allSheets || !allSheets.sheets) return [];
+    
+    return Object.keys(allSheets.sheets)
+      .map(sheetName => ({
+        name: sheetName,
+        records: allSheets.sheets[sheetName].totalRecords || 0
+      }))
+      .sort((a, b) => b.records - a.records)
+      .slice(0, 10);
+  };
+
+  const getRecentActivity = () => {
+    if (!allSheets || !allSheets.sheets) return [];
+    
+    const recentRecords = [];
+    
+    Object.keys(allSheets.sheets).forEach(sheetName => {
+      const sheetData = allSheets.sheets[sheetName];
+      if (sheetData && sheetData.data) {
+        const headers = sheetData.headers;
+        const childNameIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('name of child'));
+        const regDateIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
+        
+        const lastFive = sheetData.data.slice(-5);
+        for (let i = 0; i < lastFive.length; i++) {
+          recentRecords.push({
+            name: lastFive[i][childNameIndex] || 'Unknown',
+            date: lastFive[i][regDateIndex] || 'Unknown',
+            book: sheetName,
+            id: i
+          });
+        }
+      }
+    });
+    
+    return recentRecords.slice(-10).reverse();
+  };
+
+  if (loading && !allSheets) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(rgba(26, 42, 79, 0.92), rgba(255, 255, 255, 0.85))' }}>
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin-slow mx-auto mb-4"></div>
+          <p className="text-white text-lg">Loading spreadsheet data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(rgba(26, 42, 79, 0.92), rgba(255, 255, 255, 0.85))' }}>
+        <div className="bg-white rounded-xl p-8 max-w-md text-center shadow-2xl">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Error Loading Data</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button onClick={fetchAllSheets} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const sheetNames = getSheetNames();
+  const stats = getDashboardStats();
+  const displayRows = activeSheet ? getDisplayRows(activeSheet.data) : [];
+  const availableMonths = activeSheet ? getAvailableMonths(activeSheet.data) : [];
+  const totalFilteredRecords = displayRows.length;
+  const totalRecords = activeSheet?.data?.length - 1 || 0;
+
+  const monthlyData = getMonthlyDistribution();
+  const yearlyData = getYearlyDistribution();
+  const genderData = getGenderDistribution();
+  const topBooks = getTopBooks();
+  const recentActivity = getRecentActivity();
+  const avgRecordsPerBook = (stats.totalRecords / stats.totalSheets).toFixed(1);
+
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Sidebar */}
+      <aside className="w-80 fixed h-full overflow-hidden shadow-xl flex flex-col" style={{ background: 'rgba(26, 42, 79, 0.92)' }}>
+        <div className="p-6 border-b border-white/30">
+          <h2 className="text-2xl font-bold mb-1 text-white">📊 LCR Registry</h2>
+          <p className="text-sm text-white">Birth Records System</p>
+        </div>
+        
+        <div className="p-4 pb-2">
+          <button 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mb-2 ${
+              activeView === "dashboard" 
+                ? "bg-white/40 border-l-4 border-blue-600 text-gray-800" 
+                : "hover:bg-white/30 text-gray-700"
+            }`}
+            onClick={goToDashboard}
+          >
+            <span className="text-xl">📈</span>
+            <span className="text-white">Dashboard</span>
+          </button>
+          
+          <div className="h-px bg-gray-400/30 my-3"></div>
+          
+          <h3 className="text-xs uppercase tracking-wider text-white mb-2 px-3">Registry Books</h3>
+        </div>
+        
+        <div className="px-4 pb-4 overflow-y-auto custom-scrollbar flex-1">
+          <div className="space-y-1">
+            <button
+              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all font-semibold ${
+                activeView === "sheet" && isAllBooks 
+                  ? "bg-white/40 border-l-4 border-yellow-600" 
+                  : "hover:bg-white/30"
+              }`}
+              onClick={fetchAllBooks}
+            >
+              <span className="text-xl">📚</span>
+              <span className="flex-1 text-left text-white">All Registry Books</span>
+              <span className="bg-gray-500/30 px-2 py-0.5 rounded-full text-xs text-white">{stats.totalRecords}</span>
+            </button>
+            
+            {sheetNames.map((sheetName) => {
+              const recordCount = allSheets.sheets[sheetName]?.totalRecords || 0;
+              return (
+                <button
+                  key={sheetName}
+                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
+                    activeView === "sheet" && activeSheet?.name === sheetName && !isAllBooks 
+                      ? "bg-white/40 border-l-4 border-blue-600" 
+                      : "hover:bg-white/30"
+                  }`}
+                  onClick={() => fetchSpecificSheet(sheetName)}
+                >
+                  <span className="text-lg">📄</span>
+                  <span className="flex-1 text-left text-sm truncate text-white">{sheetName}</span>
+                  <span className="bg-gray-500/30 px-2 py-0.5 rounded-full text-xs text-white">{recordCount}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 ml-80 overflow-auto h-screen custom-scrollbar">
+        {activeView === "dashboard" ? (
+          <div className="p-6">
+            <div className="mb-8">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-800 mb-2">Data Analytics Dashboard</h1>
+                  <p className="text-gray-600">Comprehensive insights and analytics for LCR Registry Birth Records</p>
+                </div>
+                <button 
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-md"
+                  onClick={refreshData}
+                >
+                  <span>🔄</span> Refresh Data
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-4xl text-blue-600">📚</div>
+                  <div className="text-2xl font-bold text-blue-600">{stats.totalSheets}</div>
+                </div>
+                <h3 className="text-gray-600 text-sm font-medium">Total Registry Books</h3>
+                <p className="text-xs text-gray-400 mt-1">Complete collection</p>
+              </div>
+              
+              <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-4xl text-green-600">
+                    <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                  </div>
+                  <div className="text-2xl font-bold text-green-600">{stats.totalRecords.toLocaleString()}</div>
+                </div>
+                <h3 className="text-gray-600 text-sm font-medium">Total Birth Records</h3>
+                <p className="text-xs text-gray-400 mt-1">Registered births</p>
+              </div>
+              
+              <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-4xl text-purple-600">📊</div>
+                  <div className="text-2xl font-bold text-purple-600">{avgRecordsPerBook}</div>
+                </div>
+                <h3 className="text-gray-600 text-sm font-medium">Avg. Records per Book</h3>
+                <p className="text-xs text-gray-400 mt-1">Average distribution</p>
+              </div>
+              
+              <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-4xl text-orange-600">📅</div>
+                  <div className="text-2xl font-bold text-orange-600">{yearlyData.length}</div>
+                </div>
+                <h3 className="text-gray-600 text-sm font-medium">Years of Data</h3>
+                <p className="text-xs text-gray-400 mt-1">Historical coverage</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <div className="bg-white rounded-xl p-6 shadow-lg">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <span>📈</span> Monthly Registration Trends
+                </h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={monthlyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="month" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                      formatter={(value) => [`${value} registrations`, 'Count']}
+                    />
+                    <Legend />
+                    <Bar dataKey="registrations" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Registrations" />
+                  </BarChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-500 text-center mt-4">Distribution of registrations throughout the year</p>
+              </div>
+
+              <div className="bg-white rounded-xl p-6 shadow-lg">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <span>📊</span> Yearly Registration Trends
+                </h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={yearlyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="year" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                      formatter={(value) => [`${value} records`, 'Count']}
+                    />
+                    <Legend />
+                    <Line type="monotone" dataKey="count" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: '#8b5cf6', r: 4 }} name="Records" />
+                    <Area type="monotone" dataKey="count" fill="#8b5cf6" fillOpacity={0.1} stroke="none" />
+                  </LineChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-500 text-center mt-4">Annual registration trends over the years</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <div className="bg-white rounded-xl p-6 shadow-lg">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <span>⚥</span> Gender Distribution
+                </h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={genderData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={5}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {genderData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                      formatter={(value) => [`${value} records`, 'Count']}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-500 text-center mt-4">Gender breakdown of registered births</p>
+              </div>
+
+              <div className="bg-white rounded-xl p-6 shadow-lg">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <span>🏆</span> Top 10 Registry Books
+                </h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={topBooks} layout="vertical" margin={{ left: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis type="number" stroke="#6b7280" />
+                    <YAxis type="category" dataKey="name" stroke="#6b7280" width={80} tick={{ fontSize: 11 }} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                      formatter={(value) => [`${value} records`, 'Count']}
+                    />
+                    <Bar dataKey="records" fill="#10b981" radius={[0, 4, 4, 0]} name="Total Records" />
+                  </BarChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-500 text-center mt-4">Books with the highest number of records</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white shadow-lg">
+                <div className="text-3xl mb-3">💡</div>
+                <h4 className="font-bold text-lg mb-2">Total Registrations</h4>
+                <p className="text-3xl font-bold mb-2">{stats.totalRecords.toLocaleString()}</p>
+                <p className="text-blue-100 text-sm">Across {stats.totalSheets} registry books</p>
+              </div>
+              
+              <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white shadow-lg">
+                <div className="text-3xl mb-3">📈</div>
+                <h4 className="font-bold text-lg mb-2">Peak Registration Month</h4>
+                <p className="text-3xl font-bold mb-2">
+                  {monthlyData.reduce((max, item) => item.registrations > max.registrations ? item : max, monthlyData[0])?.month || 'N/A'}
+                </p>
+                <p className="text-purple-100 text-sm">Highest monthly average</p>
+              </div>
+              
+              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
+                <div className="text-3xl mb-3">⭐</div>
+                <h4 className="font-bold text-lg mb-2">Largest Registry Book</h4>
+                <p className="text-xl font-bold mb-1 truncate">{topBooks[0]?.name || 'N/A'}</p>
+                <p className="text-green-100 text-sm">{topBooks[0]?.records?.toLocaleString() || 0} total records</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-8">
+            <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-800">
+                    {isAllBooks ? "📚 All Registry Books" : activeSheet?.name}
+                    {isAllBooks && (
+                      <span className="inline-block ml-3 bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm">
+                        {sheetNames.length} Books
+                      </span>
+                    )}
+                  </h1>
+                  <p className="text-gray-600 mt-1">Total Records: {totalRecords.toLocaleString()}</p>
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-md"
+                    onClick={refreshData}
+                  >
+                    <span>🔄</span> Refresh
+                  </button>
+                  <button 
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 shadow-md"
+                    onClick={openAddModal}
+                  >
+                    <span className="text-lg">➕</span>
+                    Add New Record
+                  </button>
+                </div>
+              </div>
+              
+              <div className="relative mb-4">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                <input
+                  type="text"
+                  className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Search by name, registry number, date, book name, or any other field..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                {searchTerm && (
+                  <button 
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              
+              {availableMonths.length > 0 && (
+                <div className="flex flex-wrap items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                  <label className="font-semibold text-gray-700">Filter by Month:</label>
+                  <select 
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                  >
+                    <option value="all">All Months</option>
+                    {availableMonths.map(month => (
+                      <option key={month.value} value={month.value}>
+                        {month.label}
+                      </option>
+                    ))}
+                  </select>
+                  
+                  {(selectedMonth !== "all" || searchTerm) && (
+                    <div className="flex items-center gap-3 bg-blue-50 px-4 py-2 rounded-lg">
+                      <span className="text-sm text-blue-700">
+                        {searchTerm && `Search: "${searchTerm}" `}
+                        {searchTerm && selectedMonth !== "all" && " • "}
+                        {selectedMonth !== "all" && `Month: ${availableMonths.find(m => m.value === parseInt(selectedMonth))?.label}`}
+                      </span>
+                      <span className="bg-blue-600 text-white px-2 py-0.5 rounded-full text-xs">
+                        {totalFilteredRecords} result(s)
+                      </span>
+                      <button 
+                        className="text-sm text-red-600 hover:text-red-700 font-medium"
+                        onClick={() => {
+                          setSelectedMonth("all");
+                          setSearchTerm("");
+                        }}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-20">
+                <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin-slow"></div>
+                <p className="mt-4 text-gray-600">Loading sheet data...</p>
+              </div>
+            ) : displayRows.length > 0 ? (
+              <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                <div className="overflow-x-auto max-h-[70vh]">
+                  <table className="w-full">
+                    <thead className="sticky top-0" style={{ background: 'rgba(26, 42, 79, 0.92)' }}>
+                      <tr>
+                        {isAllBooks && <th className="px-4 py-3 text-left text-sm font-semibold text-white">Book Name</th>}
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-white">Book #</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-white">Page #</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-white">LCR Registry Number</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-white">Date of Registration</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-white">Name of Child</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-white">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {displayRows.map((row, rowIdx) => (
+                        <tr key={rowIdx} className="hover:bg-gray-50 transition">
+                          {isAllBooks && <td className="px-4 py-3 text-sm text-blue-600 font-medium">{row.bookName || "—"}</td>}
+                          <td className="px-4 py-3 text-sm text-gray-800">{row.book || "—"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-800">{row.page || "—"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-800">{row.lcrNumber || "—"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-800">{row.registrationDate || "—"}</td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-800">{row.childName || "—"}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <button 
+                                className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition"
+                                onClick={() => openModal(row)}
+                              >
+                                View Details
+                              </button>
+                              <button 
+                                className="px-3 py-1 bg-yellow-500 text-white rounded-lg text-sm hover:bg-yellow-600 transition"
+                                onClick={() => {
+                                  const sheetName = isAllBooks ? row.bookName : activeSheet?.name;
+                                  openEditModal(row, row.rowNumber);
+                                }}
+                              >
+                                ✏️ Edit
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl shadow-md p-12 text-center">
+                <div className="text-6xl mb-4">🔍</div>
+                <p className="text-gray-600 mb-4">No records found matching your search criteria.</p>
+                {(selectedMonth !== "all" || searchTerm) && (
+                  <button 
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                    onClick={() => {
+                      setSelectedMonth("all");
+                      setSearchTerm("");
+                    }}
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* View Details Modal */}
+      {isModalOpen && selectedRecord && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Fixed Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-purple-700 text-white px-6 py-4 flex-shrink-0">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold">Personal Information</h2>
+                </div>
+                <button 
+                  className="text-2xl hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition"
+                  onClick={closeModal}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            
+            {/* Scrollable Content */}
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="flex items-center gap-4 mb-6 pb-4 border-b border-gray-200">
+                <div className="text-6xl">
+                  <svg className="w-16 h-16 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-800">
+                    {selectedRecord.fullRecord.find((_, idx) => 
+                      selectedRecord.headers?.[idx]?.toLowerCase().includes('name of child')
+                    ) || "Unknown"}
+                  </h3>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <h4 className="text-lg font-semibold text-blue-600 mb-3 flex items-center gap-2">
+                    <span>📋</span> Personal Details
+                  </h4>
+                </div>
+                
+                {selectedRecord.fullRecord.map((value, index) => {
+                  const header = selectedRecord.headers?.[index] || `Field ${index + 1}`;
+                  if (value && value.toString().trim()) {
+                    if (isAllBooks && header === "Book Name") return null;
+                    
+                    let icon = "📄";
+                    const headerLower = header.toLowerCase();
+                    if (headerLower.includes('name')) icon = "👤";
+                    else if (headerLower.includes('date')) icon = "📅";
+                    else if (headerLower.includes('book')) icon = "📚";
+                    else if (headerLower.includes('page')) icon = "📄";
+                    else if (headerLower.includes('lcr') || headerLower.includes('registry')) icon = "🔢";
+                    else if (headerLower.includes('sex') || headerLower.includes('gender')) icon = "⚥";
+                    else if (headerLower.includes('birth')) icon = "🎂";
+                    else if (headerLower.includes('place')) icon = "📍";
+                    else if (headerLower.includes('mother')) icon = "👩";
+                    else if (headerLower.includes('father')) icon = "👨";
+                    else if (headerLower.includes('nationality')) icon = "🌍";
+                    
+                    return (
+                      <div className="bg-gray-50 rounded-lg p-3 hover:shadow-md transition group" key={index}>
+                        <div className="flex items-start gap-3">
+                          <div className="text-2xl group-hover:scale-110 transition">{icon}</div>
+                          <div className="flex-1">
+                            <div className="text-xs font-semibold text-blue-600 uppercase tracking-wider">
+                              {header}
+                            </div>
+                            <div className="text-gray-800 font-medium mt-1 break-words">
+                              {value}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            </div>
+            
+            {/* Fixed Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 flex-shrink-0">
+              <button 
+                className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition flex items-center gap-2"
+                onClick={() => {
+                  closeModal();
+                  const sheetName = isAllBooks ? selectedRecord.bookName : activeSheet?.name;
+                  // Find the row number for this record
+                  const rowIndex = displayRows.findIndex(r => r.childName === selectedRecord.childName);
+                  const rowNumber = rowIndex !== -1 ? displayRows[rowIndex]?.rowNumber : null;
+                  if (rowNumber && sheetName) {
+                    openEditModal(selectedRecord, rowNumber);
+                  }
+                }}
+              >
+                <span>✏️</span> Edit Record
+              </button>
+              <button 
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
+                onClick={closeModal}
+              >
+                <span>✕</span> Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Record Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Fixed Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 flex-shrink-0">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold">Add New Birth Record</h2>
+                  <p className="text-green-100 text-sm mt-1">Fill in the details below</p>
+                </div>
+                <button 
+                  className="text-2xl hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition"
+                  onClick={closeAddModal}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            
+            {/* Scrollable Content */}
+            <div className="p-6 overflow-y-auto flex-1">
+              {/* Sheet Selector - Only show when in All Registry Books view */}
+              {isAllBooks && (
+                <div className="mb-6">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">📚 Select Registry Book</label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value={selectedSheetForAdd}
+                    onChange={(e) => handleSheetSelectionChange(e.target.value)}
+                  >
+                    <option value="">-- Select a registry book --</option>
+                    {sheetNames.map(sheet => (
+                      <option key={sheet} value={sheet}>{sheet}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Choose which registry book this record belongs to</p>
+                </div>
+              )}
+              
+              {/* Form Fields - Show only if a sheet is selected */}
+              {((isAllBooks && selectedSheetForAdd) || (!isAllBooks && selectedSheetForAdd)) && (
+                <div>
+                  <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-blue-700">
+                      <strong>Adding to:</strong> {selectedSheetForAdd}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(isAllBooks ? addFormHeaders : activeSheet?.data?.[0] || []).map((header, idx) => {
+                      if (header && header.trim()) {
+                        return (
+                          <div className="form-group" key={idx}>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">{header}</label>
+                            <input
+                              type="text"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                              placeholder={`Enter ${header}`}
+                              value={formData[header] || ''}
+                              onChange={(e) => setFormData({ ...formData, [header]: e.target.value })}
+                            />
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                </div>
+              )}
+              
+              {isAllBooks && !selectedSheetForAdd && (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-lg">📚</p>
+                  <p>Please select a registry book above to continue</p>
+                </div>
+              )}
+            </div>
+            
+            {/* Fixed Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 flex-shrink-0">
+              <button 
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+                onClick={closeAddModal}
+              >
+                Cancel
+              </button>
+              <button 
+                className={`px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 ${(!selectedSheetForAdd) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                onClick={handleAddRecord}
+                disabled={!selectedSheetForAdd}
+              >
+                <span>💾</span> Save Record
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Record Modal */}
+      {isEditModalOpen && editingRecord && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Fixed Header */}
+            <div className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-6 py-4 flex-shrink-0">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold">Edit Birth Record</h2>
+                  <p className="text-yellow-100 text-sm mt-1">Update the information below</p>
+                </div>
+                <button 
+                  className="text-2xl hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition"
+                  onClick={closeEditModal}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            
+            {/* Scrollable Content */}
+            <div className="p-6 overflow-y-auto flex-1">
+              {/* Show which row we're editing */}
+              <div className="mb-4 p-3 bg-yellow-50 rounded-lg">
+                <p className="text-sm text-yellow-700">
+                  <strong>Editing Row #{editingRowNumber}</strong> in <strong>{isAllBooks ? editingRecord.bookName : activeSheet?.name}</strong>
+                </p>
+                <p className="text-xs text-gray-500 mt-1">⚠️ Make sure you're editing the correct record</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {editingRecord.headers?.map((header, idx) => {
+                  // Skip Book Name header if in All Books view
+                  if (isAllBooks && header === 'Book Name') return null;
+                  if (header && header.trim()) {
+                    // Get the value from the fullRecord object
+                    const value = editingRecord.fullRecord?.[header] || '';
+                    
+                    return (
+                      <div className="form-group" key={idx}>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">{header}</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                          value={value}
+                          onChange={(e) => {
+                            // Update the fullRecord object
+                            const updatedFullRecord = { ...editingRecord.fullRecord };
+                            updatedFullRecord[header] = e.target.value;
+                            setEditingRecord({ ...editingRecord, fullRecord: updatedFullRecord });
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            </div>
+            
+            {/* Fixed Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between gap-3 flex-shrink-0">
+              <button 
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                onClick={() => {
+                  const sheetName = isAllBooks ? editingRecord.bookName : activeSheet?.name;
+                  if (confirm("Are you sure you want to delete this record? This action cannot be undone.")) {
+                    handleDeleteRecord(sheetName, editingRowNumber);
+                  }
+                }}
+              >
+                🗑️ Delete Record
+              </button>
+              <div className="flex gap-3">
+                <button 
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+                  onClick={closeEditModal}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition flex items-center gap-2"
+                  onClick={handleUpdateRecord}
+                >
+                  <span>💾</span> Update Record
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
