@@ -324,7 +324,7 @@ function App() {
   const refreshData = async () => {
     setLoading(true);
     try {
-      await fetch('http://localhost:3001/api/sheets/clear-cache', { method: 'POST' });
+      // Clear local cache by refetching
       await fetchAllSheets();
       if (activeView === "sheet" && activeSheet && !isAllBooks && activeSheet.name !== "ALL REGISTRY BOOKS") {
         await fetchSpecificSheet(activeSheet.name);

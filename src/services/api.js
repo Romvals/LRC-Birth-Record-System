@@ -1,77 +1,81 @@
-// src/services/api.js
-
-const API_BASE_URL = 'http://localhost:3001/api/sheets';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbysbIEta7KlFyrYuKoPtOCV1dwYSPRNcyG89fhenKmMZjz5Br2B80oPKM1vbzNcCQRx/exec';
 
 class LCRAPI {
-  async request(endpoint, options = {}) {
+  async request(method = 'GET', data = null) {
+    let url = APPS_SCRIPT_URL;
+    
+    if (method === 'GET' && data) {
+      const params = new URLSearchParams(data);
+      url = `${APPS_SCRIPT_URL}?${params.toString()}`;
+    }
+    
+    const options = {
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    };
+    
+    if (data && method !== 'GET') {
+      options.body = JSON.stringify(data);
+    }
+    
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`API Error ${response.status}:`, errorText);
-        return { success: false, error: `HTTP ${response.status}: ${errorText}` };
-      }
-      
-      const data = await response.json();
-      
-      // Log if data came from cache
-      if (data.fromCache) {
-        console.log(`📦 ${endpoint} - served from cache`);
-      }
-      
-      return data;
+      const response = await fetch(url, options);
+      const result = await response.json();
+      return result;
     } catch (error) {
-      console.error('API Fetch Error:', error);
+      console.error('API Error:', error);
       return { success: false, error: error.message };
     }
   }
 
   async getAllSheets() {
-    console.log('Fetching all sheets...');
-    return this.request('/all');
+    return this.request('GET', { action: 'getAllSheets' });
   }
 
   async getSheetData(sheetName) {
-    console.log(`Fetching sheet data for: ${sheetName}`);
-    return this.request(`/data?sheetName=${encodeURIComponent(sheetName)}`);
+    return this.request('GET', { action: 'getSheetData', sheetName: sheetName });
   }
 
   async getSheetNames() {
-    return this.request('');
+    return this.request('GET', { action: 'getSheetNames' });
   }
 
   async getStats() {
-    return this.request('/stats');
+    return this.request('GET', { action: 'getStats' });
   }
 
   async addRecord(sheetName, record) {
-    console.log(`Adding record to: ${sheetName}`);
-    return this.request('/add', {
-      method: 'POST',
-      body: JSON.stringify({ sheetName, record }),
+    return this.request('POST', {
+      action: 'addRecord',
+      sheetName: sheetName,
+      record: record
     });
   }
 
   async updateRecord(sheetName, rowNumber, record) {
-    console.log(`Updating record in: ${sheetName}, row: ${rowNumber}`);
-    return this.request('/update', {
-      method: 'POST',
-      body: JSON.stringify({ sheetName, rowNumber, record }),
+    return this.request('POST', {
+      action: 'updateRecord',
+      sheetName: sheetName,
+      rowNumber: rowNumber,
+      record: record
     });
   }
 
   async deleteRecord(sheetName, rowNumber) {
-    console.log(`Deleting record from: ${sheetName}, row: ${rowNumber}`);
-    return this.request('/delete', {
-      method: 'POST',
-      body: JSON.stringify({ sheetName, rowNumber }),
+    return this.request('POST', {
+      action: 'deleteRecord',
+      sheetName: sheetName,
+      rowNumber: rowNumber
+    });
+  }
+
+  async bulkAddRecords(sheetName, records) {
+    return this.request('POST', {
+      action: 'bulkAdd',
+      sheetName: sheetName,
+      records: records
     });
   }
 }

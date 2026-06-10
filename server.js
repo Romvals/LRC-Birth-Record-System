@@ -471,17 +471,6 @@ app.post('/api/sheets/delete', async (req, res) => {
   }
 });
 
-// Clear cache endpoint (for debugging)
-app.post('/api/sheets/clear-cache', (req, res) => {
-  cache = {
-    allSheets: null,
-    sheetData: new Map(),
-    stats: null,
-    timestamp: null
-  };
-  res.json({ success: true, message: 'Cache cleared' });
-});
-
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
