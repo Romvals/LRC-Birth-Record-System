@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   Area
 } from 'recharts';
+import toast, { Toaster } from 'react-hot-toast';
 import api from './services/api';
 import "./index.css";
 
@@ -43,6 +44,7 @@ function App() {
         setAvailableSheets(Object.keys(response.sheets));
         if (response.fromCache) {
           console.log('Data loaded from cache');
+          toast.success("📊 Data loaded from cache", { duration: 2000 });
         }
       } else {
         throw new Error(response.error);
@@ -50,6 +52,7 @@ function App() {
     } catch (err) {
       console.error("Fetch all sheets failed:", err);
       setError(err.message);
+      toast.error("Failed to load data: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -72,19 +75,28 @@ function App() {
         setActiveView("sheet");
         setSelectedMonth("all");
         setSearchTerm("");
+        if (response.fromCache) {
+          toast.success(`📄 Loaded ${sheetName} from cache`, { duration: 1500 });
+        }
       } else {
         throw new Error(response.error);
       }
     } catch (err) {
       console.error(`Fetch sheet "${sheetName}" failed:`, err);
       setError(err.message);
+      toast.error(`Failed to load ${sheetName}: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
   const fetchAllBooks = async () => {
-    if (!allSheets || !allSheets.sheets) return;
+    if (!allSheets || !allSheets.sheets) {
+      toast.error("No data available");
+      return;
+    }
+    
+    toast.loading("Loading all registry books...", { id: "all-books" });
     
     const allData = [];
     let headers = null;
@@ -115,9 +127,10 @@ function App() {
       setIsAllBooks(true);
       setSelectedMonth("all");
       setSearchTerm("");
+      toast.success(`📚 Loaded ${sortedSheets.length} books with ${allData.length} records`, { id: "all-books" });
     } else {
       console.error("No data available for All Books view");
-      alert("Unable to load All Registry Books. Please refresh the page and try again.");
+      toast.error("Unable to load All Registry Books. Please refresh the page and try again.", { id: "all-books" });
     }
   };
 
@@ -143,7 +156,7 @@ function App() {
   const capitalizeText = (text, header) => {
     if (!text) return '';
     // Skip capitalization for LCR Registry Number field
-    if (header && header.toLowerCase().includes('lcr') || header && header.toLowerCase().includes('registry number')) {
+    if (header && (header.toLowerCase().includes('lcr') || header.toLowerCase().includes('registry number'))) {
       return text;
     }
     return text.toString().toUpperCase();
@@ -200,6 +213,7 @@ function App() {
       return;
     }
     
+    toast.loading(`Loading ${sheetName}...`, { id: "sheet-load" });
     try {
       const response = await api.getSheetData(sheetName);
       if (response.success && response.headers) {
@@ -210,10 +224,11 @@ function App() {
           emptyForm[header] = '';
         });
         setFormData(emptyForm);
+        toast.success(`Ready to add record to ${sheetName}`, { id: "sheet-load", duration: 1500 });
       }
     } catch (err) {
       console.error("Error fetching sheet headers:", err);
-      alert("Could not load sheet data. Please try again.");
+      toast.error("Could not load sheet data. Please try again.", { id: "sheet-load" });
     }
   };
 
@@ -228,16 +243,18 @@ function App() {
     try {
       const sheetName = selectedSheetForAdd;
       if (!sheetName) {
-        alert("Please select a registry book");
+        toast.error("Please select a registry book");
         return;
       }
+      
+      toast.loading("Saving record...", { id: "add-record" });
       
       const headersList = isAllBooks ? addFormHeaders : (activeSheet?.data?.[0] || []);
       const processedData = processFormData(formData, headersList);
       const response = await api.addRecord(sheetName, processedData);
       
       if (response.success) {
-        alert(`Record added successfully to ${sheetName}!`);
+        toast.success(`✅ Record added successfully to ${sheetName}!`, { id: "add-record" });
         closeAddModal();
         
         if (isAllBooks) {
@@ -247,10 +264,10 @@ function App() {
         }
         await fetchAllSheets();
       } else {
-        alert("Error: " + response.error);
+        toast.error("Error: " + response.error, { id: "add-record" });
       }
     } catch (err) {
-      alert("Error adding record: " + err.message);
+      toast.error("Error adding record: " + err.message, { id: "add-record" });
     }
   };
 
@@ -272,7 +289,7 @@ function App() {
       setIsEditModalOpen(true);
     } else {
       console.error("Invalid record data:", record);
-      alert("Error loading record data for editing");
+      toast.error("Error loading record data for editing");
     }
   };
 
@@ -286,9 +303,11 @@ function App() {
     try {
       const sheetName = isAllBooks ? editingRecord.bookName : activeSheet?.name;
       if (sheetName === 'ALL' || !sheetName) {
-        alert("Please select a specific book to edit records");
+        toast.error("Please select a specific book to edit records");
         return;
       }
+      
+      toast.loading("Updating record...", { id: "update-record" });
       
       // Process the data before sending
       const processedRecord = {};
@@ -312,7 +331,7 @@ function App() {
       const response = await api.updateRecord(sheetName, editingRowNumber, recordArray);
       
       if (response.success) {
-        alert("Record updated successfully!");
+        toast.success("✅ Record updated successfully!", { id: "update-record" });
         closeEditModal();
         if (isAllBooks) {
           await fetchAllBooks();
@@ -321,10 +340,10 @@ function App() {
         }
         await fetchAllSheets();
       } else {
-        alert("Error: " + response.error);
+        toast.error("Error: " + response.error, { id: "update-record" });
       }
     } catch (err) {
-      alert("Error updating record: " + err.message);
+      toast.error("Error updating record: " + err.message, { id: "update-record" });
     }
   };
 
@@ -333,23 +352,26 @@ function App() {
       return;
     }
     
+    toast.loading("Deleting record...", { id: "delete-record" });
+    
     try {
       const response = await api.deleteRecord(sheetName, rowNumber);
       
       if (response.success) {
-        alert("Record deleted successfully!");
+        toast.success("🗑️ Record deleted successfully!", { id: "delete-record" });
         closeEditModal();
         await fetchSpecificSheet(sheetName);
       } else {
-        alert("Error: " + response.error);
+        toast.error("Error: " + response.error, { id: "delete-record" });
       }
     } catch (err) {
-      alert("Error deleting record: " + err.message);
+      toast.error("Error deleting record: " + err.message, { id: "delete-record" });
     }
   };
 
   const refreshData = async () => {
     setLoading(true);
+    toast.loading("Refreshing data...", { id: "refresh" });
     try {
       await fetchAllSheets();
       if (activeView === "sheet" && activeSheet && !isAllBooks && activeSheet.name !== "ALL REGISTRY BOOKS") {
@@ -357,8 +379,10 @@ function App() {
       } else if (isAllBooks) {
         await fetchAllBooks();
       }
+      toast.success("Data refreshed successfully!", { id: "refresh", duration: 2000 });
     } catch (err) {
       console.error("Refresh failed:", err);
+      toast.error("Refresh failed: " + err.message, { id: "refresh" });
     } finally {
       setLoading(false);
     }
@@ -570,7 +594,6 @@ function App() {
     if (!allSheets || !allSheets.sheets) return [];
     
     let male = 0, female = 0;
-    let totalWithSex = 0;
     
     Object.keys(allSheets.sheets).forEach(sheetName => {
       const sheetData = allSheets.sheets[sheetName];
@@ -594,45 +617,36 @@ function App() {
             const sexValue = sheetData.data[i][sexIndex];
             if (sexValue) {
               const sex = sexValue.toString().trim().toUpperCase();
-              totalWithSex++;
               
               // Check for MALE
               if (sex === 'MALE' || sex === 'M' || sex === 'MALE ' || sex.includes('MALE')) {
                 male++;
-                console.log(`Found MALE: "${sex}" in ${sheetName} row ${i + 2}`);
               } 
               // Check for FEMALE
               else if (sex === 'FEMALE' || sex === 'F' || sex === 'FEMALE ' || sex.includes('FEMALE')) {
                 female++;
-                console.log(`Found FEMALE: "${sex}" in ${sheetName} row ${i + 2}`);
               }
               else if (sex.replace(/\s/g, '') === 'MALE') {
                 male++;
-                console.log(`Found MALE (trimmed): "${sex}" in ${sheetName} row ${i + 2}`);
               }
               else if (sex.replace(/\s/g, '') === 'FEMALE') {
                 female++;
-                console.log(`Found FEMALE (trimmed): "${sex}" in ${sheetName} row ${i + 2}`);
               }
             }
           }
         } else {
           // If no dedicated sex column, search through all cells in each row
-          console.log(`No sex column found in ${sheetName}, searching through all cells...`);
           for (let i = 0; i < sheetData.data.length; i++) {
             const row = sheetData.data[i];
             for (let j = 0; j < row.length; j++) {
               const cell = row[j]?.toString().trim().toUpperCase();
               if (cell === 'MALE' || cell === 'FEMALE') {
-                totalWithSex++;
                 if (cell === 'MALE') {
                   male++;
-                  console.log(`Found MALE in cell search: "${cell}" in ${sheetName} row ${i + 2}`);
                 } else if (cell === 'FEMALE') {
                   female++;
-                  console.log(`Found FEMALE in cell search: "${cell}" in ${sheetName} row ${i + 2}`);
                 }
-                break; // Found gender in this row, move to next row
+                break;
               }
             }
           }
@@ -640,9 +654,6 @@ function App() {
       }
     });
     
-    console.log(`Final gender counts - Male: ${male}, Female: ${female}, Total with sex: ${totalWithSex}`);
-    
-    // If no gender data found, return sample data
     if (male === 0 && female === 0) {
       return [
         { name: 'No Data', value: 1, color: '#9ca3af' }
@@ -713,19 +724,7 @@ function App() {
     }
     
     if (isDateField(header)) {
-      // Convert date format if needed
       let dateValue = value || '';
-      // Handle existing date formats like "July-12-1948" to YYYY-MM-DD for input
-      if (dateValue && !dateValue.includes('-') && dateValue.includes(' ')) {
-        // Try to parse common formats
-        const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
-        for (let i = 0; i < months.length; i++) {
-          if (dateValue.toUpperCase().includes(months[i])) {
-            // Keep original format, user can change via date picker
-            break;
-          }
-        }
-      }
       
       return (
         <input
@@ -799,6 +798,32 @@ function App() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#363636',
+            color: '#fff',
+            borderRadius: '8px',
+          },
+          success: {
+            duration: 3000,
+            iconTheme: {
+              primary: '#10b981',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            duration: 4000,
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
+      
       {/* Sidebar */}
       <aside className="w-80 fixed h-full overflow-hidden shadow-xl flex flex-col" style={{ background: 'rgba(26, 42, 79, 0.92)' }}>
         <div className="p-6 border-b border-white/30">
