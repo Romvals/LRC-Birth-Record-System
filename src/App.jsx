@@ -139,9 +139,13 @@ function App() {
     setSelectedRecord(null);
   };
 
-  // Helper function to capitalize text
-  const capitalizeText = (text) => {
+  // Helper function to capitalize text (except for LCR Registry Number)
+  const capitalizeText = (text, header) => {
     if (!text) return '';
+    // Skip capitalization for LCR Registry Number field
+    if (header && header.toLowerCase().includes('lcr') || header && header.toLowerCase().includes('registry number')) {
+      return text;
+    }
     return text.toString().toUpperCase();
   };
 
@@ -157,14 +161,14 @@ function App() {
   };
 
   // Helper function to process form data before saving
-  const processFormData = (data) => {
+  const processFormData = (data, headersList) => {
     const processed = {};
     Object.keys(data).forEach(key => {
       let value = data[key];
       if (!value || value.trim() === '') {
         processed[key] = 'NOT STATED';
       } else {
-        processed[key] = capitalizeText(value);
+        processed[key] = capitalizeText(value, key);
       }
     });
     return processed;
@@ -228,7 +232,8 @@ function App() {
         return;
       }
       
-      const processedData = processFormData(formData);
+      const headersList = isAllBooks ? addFormHeaders : (activeSheet?.data?.[0] || []);
+      const processedData = processFormData(formData, headersList);
       const response = await api.addRecord(sheetName, processedData);
       
       if (response.success) {
@@ -292,7 +297,7 @@ function App() {
         if (!value || value.trim() === '') {
           processedRecord[key] = 'NOT STATED';
         } else {
-          processedRecord[key] = capitalizeText(value);
+          processedRecord[key] = capitalizeText(value, key);
         }
       });
       
@@ -565,50 +570,69 @@ function App() {
     if (!allSheets || !allSheets.sheets) return [];
     
     let male = 0, female = 0;
+    let totalWithSex = 0;
     
     Object.keys(allSheets.sheets).forEach(sheetName => {
       const sheetData = allSheets.sheets[sheetName];
       if (sheetData && sheetData.data && sheetData.data.length > 0) {
         const headers = sheetData.headers;
-        const sexIndex = headers.findIndex(h => {
-          const headerLower = h?.toString().toLowerCase().trim();
-          return headerLower === 'sex' || 
-                headerLower === 'gender' || 
-                headerLower.includes('sex') ||
-                headerLower.includes('gender');
-        });
+        // Find sex column - check multiple possible headers
+        let sexIndex = -1;
+        for (let i = 0; i < headers.length; i++) {
+          const headerLower = headers[i]?.toString().toLowerCase().trim();
+          if (headerLower === 'sex' || 
+              headerLower === 'gender' || 
+              headerLower === 'sex ' ||
+              (headerLower && headerLower.includes('sex'))) {
+            sexIndex = i;
+            break;
+          }
+        }
         
         if (sexIndex !== -1) {
           for (let i = 0; i < sheetData.data.length; i++) {
             const sexValue = sheetData.data[i][sexIndex];
             if (sexValue) {
               const sex = sexValue.toString().trim().toUpperCase();
+              totalWithSex++;
               
-              if (sex === 'MALE' || sex === 'M' || sex.includes('MALE')) {
+              // Check for MALE
+              if (sex === 'MALE' || sex === 'M' || sex === 'MALE ' || sex.includes('MALE')) {
                 male++;
+                console.log(`Found MALE: "${sex}" in ${sheetName} row ${i + 2}`);
               } 
-              else if (sex === 'FEMALE' || sex === 'F' || sex.includes('FEMALE')) {
+              // Check for FEMALE
+              else if (sex === 'FEMALE' || sex === 'F' || sex === 'FEMALE ' || sex.includes('FEMALE')) {
                 female++;
+                console.log(`Found FEMALE: "${sex}" in ${sheetName} row ${i + 2}`);
               }
               else if (sex.replace(/\s/g, '') === 'MALE') {
                 male++;
+                console.log(`Found MALE (trimmed): "${sex}" in ${sheetName} row ${i + 2}`);
               }
               else if (sex.replace(/\s/g, '') === 'FEMALE') {
                 female++;
+                console.log(`Found FEMALE (trimmed): "${sex}" in ${sheetName} row ${i + 2}`);
               }
             }
           }
         } else {
+          // If no dedicated sex column, search through all cells in each row
+          console.log(`No sex column found in ${sheetName}, searching through all cells...`);
           for (let i = 0; i < sheetData.data.length; i++) {
             const row = sheetData.data[i];
             for (let j = 0; j < row.length; j++) {
               const cell = row[j]?.toString().trim().toUpperCase();
-              if (cell === 'MALE') {
-                male++;
-                break;
-              } else if (cell === 'FEMALE') {
-                female++;
-                break;
+              if (cell === 'MALE' || cell === 'FEMALE') {
+                totalWithSex++;
+                if (cell === 'MALE') {
+                  male++;
+                  console.log(`Found MALE in cell search: "${cell}" in ${sheetName} row ${i + 2}`);
+                } else if (cell === 'FEMALE') {
+                  female++;
+                  console.log(`Found FEMALE in cell search: "${cell}" in ${sheetName} row ${i + 2}`);
+                }
+                break; // Found gender in this row, move to next row
               }
             }
           }
@@ -616,10 +640,12 @@ function App() {
       }
     });
     
+    console.log(`Final gender counts - Male: ${male}, Female: ${female}, Total with sex: ${totalWithSex}`);
+    
+    // If no gender data found, return sample data
     if (male === 0 && female === 0) {
       return [
-        { name: 'Male', value: 1, color: '#3b82f6' },
-        { name: 'Female', value: 1, color: '#ec4899' }
+        { name: 'No Data', value: 1, color: '#9ca3af' }
       ];
     }
     
@@ -687,23 +713,46 @@ function App() {
     }
     
     if (isDateField(header)) {
+      // Convert date format if needed
+      let dateValue = value || '';
+      // Handle existing date formats like "July-12-1948" to YYYY-MM-DD for input
+      if (dateValue && !dateValue.includes('-') && dateValue.includes(' ')) {
+        // Try to parse common formats
+        const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+        for (let i = 0; i < months.length; i++) {
+          if (dateValue.toUpperCase().includes(months[i])) {
+            // Keep original format, user can change via date picker
+            break;
+          }
+        }
+      }
+      
       return (
         <input
           type="date"
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          value={value || ''}
+          value={dateValue}
           onChange={(e) => onChange(header, e.target.value)}
         />
       );
     }
     
+    // Check if this is LCR Registry Number field (skip capitalization)
+    const isLcrField = header.toLowerCase().includes('lcr') || header.toLowerCase().includes('registry number');
+    
     return (
       <input
         type="text"
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
         placeholder={`Enter ${header}`}
         value={value || ''}
-        onChange={(e) => onChange(header, e.target.value.toUpperCase())}
+        onChange={(e) => {
+          let newValue = e.target.value;
+          if (!isLcrField) {
+            newValue = newValue.toUpperCase();
+          }
+          onChange(header, newValue);
+        }}
       />
     );
   };
@@ -1159,7 +1208,7 @@ function App() {
         )}
       </main>
 
-      {/* View Details Modal - Same as before */}
+      {/* View Details Modal */}
       {isModalOpen && selectedRecord && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
           <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -1266,7 +1315,7 @@ function App() {
         </div>
       )}
 
-      {/* Add Record Modal - With Enhanced Form Fields */}
+      {/* Add Record Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
           <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -1355,7 +1404,7 @@ function App() {
         </div>
       )}
 
-      {/* Edit Record Modal - With Enhanced Form Fields */}
+      {/* Edit Record Modal */}
       {isEditModalOpen && editingRecord && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
           <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up flex flex-col" onClick={(e) => e.stopPropagation()}>
