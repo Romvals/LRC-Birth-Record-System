@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   Area
 } from 'recharts';
 import toast, { Toaster } from 'react-hot-toast';
+import html2pdf from 'html2pdf.js';
 import api from './services/api';
 import "./index.css";
 
@@ -18,6 +19,7 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [editingRowNumber, setEditingRowNumber] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState("all");
@@ -27,6 +29,17 @@ function App() {
   const [availableSheets, setAvailableSheets] = useState([]);
   const [selectedSheetForAdd, setSelectedSheetForAdd] = useState("");
   const [addFormHeaders, setAddFormHeaders] = useState([]);
+  const [printData, setPrintData] = useState({
+    date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+    issuedTo: '',
+    asstRegistrationOfficer: '',
+    municipalCivilRegistrar: '',
+    orNumber: '',
+    amountPaid: '',
+    datePaid: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  });
+  
+  const printRef = useRef();
 
   useEffect(() => {
     fetchAllSheets();
@@ -43,7 +56,6 @@ function App() {
         setAllSheets({ sheets: response.sheets, totalSheets: response.totalSheets });
         setAvailableSheets(Object.keys(response.sheets));
         if (response.fromCache) {
-          console.log('Data loaded from cache');
           toast.success("📊 Data loaded from cache", { duration: 2000 });
         }
       } else {
@@ -152,28 +164,61 @@ function App() {
     setSelectedRecord(null);
   };
 
+  const openPrintModal = (record) => {
+    // Get the child's name from the record
+    const childName = record.fullRecord.find((_, idx) => 
+      record.headers?.[idx]?.toLowerCase().includes('name of child')
+    ) || "Unknown";
+    
+    setPrintData({
+      ...printData,
+      issuedTo: childName
+    });
+    setSelectedRecord(record);
+    setIsPrintModalOpen(true);
+  };
+
+  const closePrintModal = () => {
+    setIsPrintModalOpen(false);
+    setSelectedRecord(null);
+  };
+
+  const handlePrintInputChange = (field, value) => {
+    setPrintData({ ...printData, [field]: value });
+  };
+
+  const generatePDF = () => {
+    const element = printRef.current;
+    const opt = {
+      margin: [0.5, 0.5, 0.5, 0.5],
+      filename: `birth_certificate_${printData.issuedTo.replace(/\s/g, '_')}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, letterRendering: true },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+    toast.success("PDF generated successfully!");
+    closePrintModal();
+  };
+
   // Helper function to capitalize text (except for LCR Registry Number)
   const capitalizeText = (text, header) => {
     if (!text) return '';
-    // Skip capitalization for LCR Registry Number field
     if (header && (header.toLowerCase().includes('lcr') || header.toLowerCase().includes('registry number'))) {
       return text;
     }
     return text.toString().toUpperCase();
   };
 
-  // Helper function to check if a header is a date field
   const isDateField = (header) => {
     const dateKeywords = ['date of registration', 'date of birth', 'date of marriage'];
     return dateKeywords.some(keyword => header.toLowerCase().includes(keyword));
   };
 
-  // Helper function to check if header is sex field
   const isSexField = (header) => {
     return header.toLowerCase().includes('sex') || header.toLowerCase().includes('gender');
   };
 
-  // Helper function to process form data before saving
   const processFormData = (data, headersList) => {
     const processed = {};
     Object.keys(data).forEach(key => {
@@ -309,7 +354,6 @@ function App() {
       
       toast.loading("Updating record...", { id: "update-record" });
       
-      // Process the data before sending
       const processedRecord = {};
       Object.keys(editingRecord.fullRecord).forEach(key => {
         let value = editingRecord.fullRecord[key];
@@ -599,7 +643,6 @@ function App() {
       const sheetData = allSheets.sheets[sheetName];
       if (sheetData && sheetData.data && sheetData.data.length > 0) {
         const headers = sheetData.headers;
-        // Find sex column - check multiple possible headers
         let sexIndex = -1;
         for (let i = 0; i < headers.length; i++) {
           const headerLower = headers[i]?.toString().toLowerCase().trim();
@@ -618,11 +661,9 @@ function App() {
             if (sexValue) {
               const sex = sexValue.toString().trim().toUpperCase();
               
-              // Check for MALE
               if (sex === 'MALE' || sex === 'M' || sex === 'MALE ' || sex.includes('MALE')) {
                 male++;
               } 
-              // Check for FEMALE
               else if (sex === 'FEMALE' || sex === 'F' || sex === 'FEMALE ' || sex.includes('FEMALE')) {
                 female++;
               }
@@ -635,7 +676,6 @@ function App() {
             }
           }
         } else {
-          // If no dedicated sex column, search through all cells in each row
           for (let i = 0; i < sheetData.data.length; i++) {
             const row = sheetData.data[i];
             for (let j = 0; j < row.length; j++) {
@@ -705,7 +745,6 @@ function App() {
     return recentRecords.slice(-10).reverse();
   };
 
-  // Form field renderer with special input types
   const renderFormField = (header, value, onChange, isEdit = false) => {
     const headerLower = header.toLowerCase();
     
@@ -736,7 +775,6 @@ function App() {
       );
     }
     
-    // Check if this is LCR Registry Number field (skip capitalization)
     const isLcrField = header.toLowerCase().includes('lcr') || header.toLowerCase().includes('registry number');
     
     return (
@@ -1204,6 +1242,12 @@ function App() {
                               >
                                 ✏️ Edit
                               </button>
+                              <button 
+                                className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition"
+                                onClick={() => openPrintModal(row)}
+                              >
+                                🖨️ Print
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1232,6 +1276,164 @@ function App() {
           </div>
         )}
       </main>
+
+      {/* Print Certificate Modal */}
+      {isPrintModalOpen && selectedRecord && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl animate-slide-up flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-blue-600 to-purple-700 text-white px-6 py-4 flex-shrink-0">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold">Birth Certificate</h2>
+                  <p className="text-blue-100 text-sm mt-1">Fill in the certificate details</p>
+                </div>
+                <button 
+                  className="text-2xl hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition"
+                  onClick={closePrintModal}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6">
+              {/* Editable Form */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Date</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={printData.date}
+                    onChange={(e) => handlePrintInputChange('date', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">THIS CERTIFICATION is issued to</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={printData.issuedTo}
+                    onChange={(e) => handlePrintInputChange('issuedTo', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Asst. Registration Officer</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={printData.asstRegistrationOfficer}
+                    onChange={(e) => handlePrintInputChange('asstRegistrationOfficer', e.target.value)}
+                    placeholder="Enter name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Municipal Civil Registrar</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={printData.municipalCivilRegistrar}
+                    onChange={(e) => handlePrintInputChange('municipalCivilRegistrar', e.target.value)}
+                    placeholder="Enter name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">O.R. Number</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={printData.orNumber}
+                    onChange={(e) => handlePrintInputChange('orNumber', e.target.value)}
+                    placeholder="Enter O.R. Number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Amount Paid</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={printData.amountPaid}
+                    onChange={(e) => handlePrintInputChange('amountPaid', e.target.value)}
+                    placeholder="Enter amount"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Date Paid</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={printData.datePaid}
+                    onChange={(e) => handlePrintInputChange('datePaid', e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Certificate Preview */}
+              <div className="border-t border-gray-200 pt-4">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Preview</h3>
+                <div ref={printRef} className="bg-white border rounded-lg p-8 shadow-lg" style={{ fontFamily: 'Times New Roman, serif' }}>
+                  <div className="text-center mb-6">
+                    <div className="border-b-2 border-gray-800 pb-4">
+                      <div className="flex justify-between items-start">
+                        <div className="text-left">
+                          <div className="text-sm">Republic of the Philippines</div>
+                          <div className="text-sm font-bold">PROVINCE OF MISAMIS ORIENTAL</div>
+                          <div className="text-sm">Office of the Municipal Civil Registrar</div>
+                          <div className="text-sm font-bold">MAGSAYSAY</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm">OCRGS MANILA</div>
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <div className="text-xs">CERTIFICATION</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3 text-sm">
+                    <p className="text-right">{printData.date ? new Date(printData.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '___________'}</p>
+                    <p>TO WHOM IT MAY CONCERN:</p>
+                    <p>THIS IS TO CERTIFY that from the files of this office, <strong>{printData.issuedTo || '___________'}</strong> is/are not a statistical measure for birth registration.</p>
+                    <p>This certification is issued upon the request of the above-named for whatever legal purpose it may serve.</p>
+                    <div className="mt-6">
+                      <p className="font-bold">SHIRELY FE S. RATILLA</p>
+                      <p>Municipal Civil Registrar</p>
+                    </div>
+                    <div className="mt-2">
+                      <p className="font-bold">VANISSA R. GASTA</p>
+                      <p>Asst. Registration Officer</p>
+                    </div>
+                    <div className="mt-4">
+                      <p>O.R. Number : {printData.orNumber || '___________'}</p>
+                      <p>Amount Paid : {printData.amountPaid ? `₱${printData.amountPaid}` : '___________'}</p>
+                      <p>Date Paid : {printData.datePaid ? new Date(printData.datePaid).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '___________'}</p>
+                    </div>
+                    <div className="mt-4 text-xs text-gray-500 italic">
+                      <p>NOTE: This Certification is made by the Registrar of any entry</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 flex-shrink-0">
+              <button 
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+                onClick={closePrintModal}
+              >
+                Cancel
+              </button>
+              <button 
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                onClick={generatePDF}
+              >
+                <span>📄</span> Generate PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* View Details Modal */}
       {isModalOpen && selectedRecord && (
