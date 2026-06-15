@@ -40,7 +40,7 @@ function App() {
     amountPaid: '',
     datePaid: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   });
-  
+ 
   const printRef = useRef();
 
   useEffect(() => {
@@ -51,17 +51,14 @@ function App() {
     try {
       setLoading(true);
       setError(null);
-      
+     
       const response = await api.getAllSheets();
-      
+     
       if (response.success) {
         setAllSheets({ sheets: response.sheets, totalSheets: response.totalSheets });
         setAvailableSheets(Object.keys(response.sheets));
         if (response.fromCache) {
           toast.success("📊 Data loaded from cache", { duration: 2000 });
-        }
-        if (response.warning) {
-          toast.warning(response.warning, { duration: 5000 });
         }
       } else {
         throw new Error(response.error);
@@ -76,14 +73,13 @@ function App() {
   };
 
   const fetchSpecificSheet = async (sheetName) => {
-    const toastId = toast.loading(`Loading ${sheetName}...`);
     try {
       setLoading(true);
       setError(null);
       setIsAllBooks(false);
-      
+     
       const response = await api.getSheetData(sheetName);
-      
+     
       if (response.success) {
         const data = [response.headers, ...response.data];
         setActiveSheet({
@@ -94,12 +90,7 @@ function App() {
         setSelectedMonth("all");
         setSearchTerm("");
         if (response.fromCache) {
-          toast.success(`📄 Loaded ${sheetName} from cache`, { id: toastId, duration: 1500 });
-        } else {
-          toast.success(`📄 Loaded ${sheetName}`, { id: toastId, duration: 1500 });
-        }
-        if (response.warning) {
-          toast.warning(response.warning, { duration: 3000 });
+          toast.success(`📄 Loaded ${sheetName} from cache`, { duration: 1500 });
         }
       } else {
         throw new Error(response.error);
@@ -107,7 +98,7 @@ function App() {
     } catch (err) {
       console.error(`Fetch sheet "${sheetName}" failed:`, err);
       setError(err.message);
-      toast.error(`Failed to load ${sheetName}: ${err.message}`, { id: toastId });
+      toast.error(`Failed to load ${sheetName}: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -118,28 +109,28 @@ function App() {
       toast.error("No data available");
       return;
     }
-    
+   
     toast.loading("Loading all registry books...", { id: "all-books" });
-    
+   
     const allData = [];
     let headers = null;
-    
+   
     const sortedSheets = Object.keys(allSheets.sheets).sort();
-    
+   
     for (const sheetName of sortedSheets) {
       const sheetData = allSheets.sheets[sheetName];
       if (sheetData && sheetData.data && sheetData.data.length > 0) {
         if (!headers) {
           headers = ['Book Name', ...(sheetData.headers || [])];
         }
-        
+       
         for (let i = 0; i < sheetData.data.length; i++) {
           const row = [sheetName, ...(sheetData.data[i] || [])];
           allData.push(row);
         }
       }
     }
-    
+   
     if (headers && allData.length > 0) {
       const combinedData = [headers, ...allData];
       setActiveSheet({
@@ -176,14 +167,17 @@ function App() {
   };
 
   const openPrintModal = (record) => {
+    // Get the child's name from the record
     const childName = record.fullRecord.find((_, idx) => 
       record.headers?.[idx]?.toLowerCase().includes('name of child')
     ) || "Unknown";
     
+    // Get page number from record
     const pageNumber = record.fullRecord.find((_, idx) => 
       record.headers?.[idx]?.toLowerCase().includes('page')
     ) || '';
     
+    // Get book number from record
     const bookNumber = record.fullRecord.find((_, idx) => 
       record.headers?.[idx]?.toLowerCase().includes('book')
     ) || '';
@@ -221,6 +215,7 @@ function App() {
     closePrintModal();
   };
 
+  // Helper function to capitalize text (except for LCR Registry Number)
   const capitalizeText = (text, header) => {
     if (!text) return '';
     if (header && (header.toLowerCase().includes('lcr') || header.toLowerCase().includes('registry number'))) {
@@ -253,7 +248,7 @@ function App() {
 
   const openAddModal = () => {
     setFormData({});
-    
+   
     if (isAllBooks) {
       setSelectedSheetForAdd("");
       setAddFormHeaders([]);
@@ -276,7 +271,7 @@ function App() {
       setSelectedSheetForAdd("");
       return;
     }
-    
+   
     toast.loading(`Loading ${sheetName}...`, { id: "sheet-load" });
     try {
       const response = await api.getSheetData(sheetName);
@@ -310,17 +305,17 @@ function App() {
         toast.error("Please select a registry book");
         return;
       }
-      
+     
       toast.loading("Saving record...", { id: "add-record" });
-      
+     
       const headersList = isAllBooks ? addFormHeaders : (activeSheet?.data?.[0] || []);
       const processedData = processFormData(formData, headersList);
       const response = await api.addRecord(sheetName, processedData);
-      
+     
       if (response.success) {
         toast.success(`✅ Record added successfully to ${sheetName}!`, { id: "add-record" });
         closeAddModal();
-        
+       
         if (isAllBooks) {
           await fetchAllBooks();
         } else if (activeSheet) {
@@ -343,7 +338,7 @@ function App() {
         if (value === 'NOT STATED') value = '';
         recordObject[header] = value;
       });
-      
+     
       setEditingRecord({
         ...record,
         fullRecord: recordObject,
@@ -370,9 +365,9 @@ function App() {
         toast.error("Please select a specific book to edit records");
         return;
       }
-      
+     
       toast.loading("Updating record...", { id: "update-record" });
-      
+     
       const processedRecord = {};
       Object.keys(editingRecord.fullRecord).forEach(key => {
         let value = editingRecord.fullRecord[key];
@@ -382,7 +377,7 @@ function App() {
           processedRecord[key] = capitalizeText(value, key);
         }
       });
-      
+     
       const headers = editingRecord.headers;
       const recordArray = [];
       for (let i = 0; i < headers.length; i++) {
@@ -390,9 +385,9 @@ function App() {
         if (isAllBooks && header === 'Book Name') continue;
         recordArray.push(processedRecord[header] || 'NOT STATED');
       }
-      
+     
       const response = await api.updateRecord(sheetName, editingRowNumber, recordArray);
-      
+     
       if (response.success) {
         toast.success("✅ Record updated successfully!", { id: "update-record" });
         closeEditModal();
@@ -414,12 +409,12 @@ function App() {
     if (!confirm("Are you sure you want to delete this record? This action cannot be undone.")) {
       return;
     }
-    
+   
     toast.loading("Deleting record...", { id: "delete-record" });
-    
+   
     try {
       const response = await api.deleteRecord(sheetName, rowNumber);
-      
+     
       if (response.success) {
         toast.success("🗑️ Record deleted successfully!", { id: "delete-record" });
         closeEditModal();
@@ -458,17 +453,17 @@ function App() {
 
   const getDashboardStats = () => {
     if (!allSheets || !allSheets.sheets) return { totalSheets: 0, totalRecords: 0, recentSheets: [] };
-    
+   
     const sheets = allSheets.sheets;
     const sheetNames = Object.keys(sheets);
     let totalRecords = 0;
-    
+   
     sheetNames.forEach(sheetName => {
       totalRecords += sheets[sheetName].totalRecords || 0;
     });
-    
+   
     const recentSheets = [...sheetNames].sort().reverse().slice(0, 5);
-    
+   
     return {
       totalSheets: sheetNames.length,
       totalRecords,
@@ -478,7 +473,7 @@ function App() {
 
   const extractMonth = (dateString) => {
     if (!dateString) return null;
-    
+   
     const months = {
       'JANUARY': 1, 'JAN': 1,
       'FEBRUARY': 2, 'FEB': 2,
@@ -493,7 +488,7 @@ function App() {
       'NOVEMBER': 11, 'NOV': 11,
       'DECEMBER': 12, 'DEC': 12
     };
-    
+   
     const upperDate = dateString.toUpperCase();
     for (const [monthName, monthNum] of Object.entries(months)) {
       if (upperDate.includes(monthName)) {
@@ -505,21 +500,21 @@ function App() {
 
   const matchesSearch = (row, searchTerm) => {
     if (!searchTerm || searchTerm.trim() === "") return true;
-    
+   
     const term = searchTerm.toLowerCase().trim();
-    return row.some(cell => 
+    return row.some(cell =>
       cell && cell.toString().toLowerCase().includes(term)
     );
   };
 
   const getDisplayRows = (data) => {
     if (!data || data.length <= 1) return [];
-    
+   
     const headers = data[0] || [];
     const rows = data.slice(1);
-    
+   
     let bookIndex, pageIndex, lcrIndex, regDateIndex, childNameIndex;
-    
+   
     if (isAllBooks) {
       const originalHeaders = headers.slice(1);
       const originalBookIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('book') && !h?.toString().toLowerCase().includes('book name'));
@@ -527,7 +522,7 @@ function App() {
       const originalLcrIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('lcr') || h?.toString().toLowerCase().includes('registry'));
       const originalRegDateIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
       const originalChildNameIndex = originalHeaders.findIndex(h => h?.toString().toLowerCase().includes('name of child'));
-      
+     
       bookIndex = originalBookIndex !== -1 ? originalBookIndex + 1 : -1;
       pageIndex = originalPageIndex !== -1 ? originalPageIndex + 1 : -1;
       lcrIndex = originalLcrIndex !== -1 ? originalLcrIndex + 1 : -1;
@@ -540,9 +535,9 @@ function App() {
       regDateIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
       childNameIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('name of child'));
     }
-    
+   
     let filteredRows = rows;
-    
+   
     if (selectedMonth !== "all" && regDateIndex !== -1) {
       filteredRows = filteredRows.filter(row => {
         const registrationDate = row[regDateIndex];
@@ -550,15 +545,15 @@ function App() {
         return month === parseInt(selectedMonth);
       });
     }
-    
+   
     if (searchTerm && searchTerm.trim() !== "") {
       filteredRows = filteredRows.filter(row => matchesSearch(row, searchTerm));
     }
-    
+   
     return filteredRows.map((row, idx) => {
       const originalIndex = rows.findIndex(r => r === row);
       const rowNumber = originalIndex + 2;
-      
+     
       return {
         bookName: isAllBooks && row[0] ? row[0] : null,
         book: bookIndex !== -1 ? (row[bookIndex] || '') : '',
@@ -575,17 +570,17 @@ function App() {
 
   const getAvailableMonths = (data) => {
     if (!data || data.length <= 1) return [];
-    
+   
     const headers = data[0] || [];
     const rows = data.slice(1);
     let regDateIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
-    
+   
     if (isAllBooks && regDateIndex !== -1) {
       regDateIndex = regDateIndex + 1;
     }
-    
+   
     if (regDateIndex === -1) return [];
-    
+   
     const monthsSet = new Set();
     rows.forEach(row => {
       const registrationDate = row[regDateIndex];
@@ -594,13 +589,13 @@ function App() {
         monthsSet.add(month);
       }
     });
-    
+   
     const monthNames = {
       1: 'January', 2: 'February', 3: 'March', 4: 'April',
       5: 'May', 6: 'June', 7: 'July', 8: 'August',
       9: 'September', 10: 'October', 11: 'November', 12: 'December'
     };
-    
+   
     return Array.from(monthsSet)
       .sort((a, b) => a - b)
       .map(month => ({ value: month, label: monthNames[month] }));
@@ -608,16 +603,16 @@ function App() {
 
   const getMonthlyDistribution = () => {
     if (!allSheets || !allSheets.sheets) return [];
-    
+   
     const monthCount = {};
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
+   
     Object.keys(allSheets.sheets).forEach(sheetName => {
       const sheetData = allSheets.sheets[sheetName];
       if (sheetData && sheetData.data) {
         const headers = sheetData.headers;
         const regDateIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
-        
+       
         for (let i = 0; i < sheetData.data.length; i++) {
           const dateStr = sheetData.data[i][regDateIndex];
           const month = extractMonth(dateStr);
@@ -627,7 +622,7 @@ function App() {
         }
       }
     });
-    
+   
     return monthNames.map((name, index) => ({
       month: name,
       registrations: monthCount[index + 1] || 0
@@ -636,9 +631,9 @@ function App() {
 
   const getYearlyDistribution = () => {
     if (!allSheets || !allSheets.sheets) return [];
-    
+   
     const yearCount = {};
-    
+   
     Object.keys(allSheets.sheets).forEach(sheetName => {
       const yearMatch = sheetName.match(/\d{4}/);
       if (yearMatch) {
@@ -647,7 +642,7 @@ function App() {
         yearCount[year] = (yearCount[year] || 0) + recordCount;
       }
     });
-    
+   
     return Object.entries(yearCount)
       .sort((a, b) => a[0] - b[0])
       .map(([year, count]) => ({ year, count }));
@@ -655,9 +650,9 @@ function App() {
 
   const getGenderDistribution = () => {
     if (!allSheets || !allSheets.sheets) return [];
-    
+   
     let male = 0, female = 0;
-    
+   
     Object.keys(allSheets.sheets).forEach(sheetName => {
       const sheetData = allSheets.sheets[sheetName];
       if (sheetData && sheetData.data && sheetData.data.length > 0) {
@@ -665,24 +660,24 @@ function App() {
         let sexIndex = -1;
         for (let i = 0; i < headers.length; i++) {
           const headerLower = headers[i]?.toString().toLowerCase().trim();
-          if (headerLower === 'sex' || 
-              headerLower === 'gender' || 
+          if (headerLower === 'sex' ||
+              headerLower === 'gender' ||
               headerLower === 'sex ' ||
               (headerLower && headerLower.includes('sex'))) {
             sexIndex = i;
             break;
           }
         }
-        
+       
         if (sexIndex !== -1) {
           for (let i = 0; i < sheetData.data.length; i++) {
             const sexValue = sheetData.data[i][sexIndex];
             if (sexValue) {
               const sex = sexValue.toString().trim().toUpperCase();
-              
+             
               if (sex === 'MALE' || sex === 'M' || sex === 'MALE ' || sex.includes('MALE')) {
                 male++;
-              } 
+              }
               else if (sex === 'FEMALE' || sex === 'F' || sex === 'FEMALE ' || sex.includes('FEMALE')) {
                 female++;
               }
@@ -712,13 +707,13 @@ function App() {
         }
       }
     });
-    
+   
     if (male === 0 && female === 0) {
       return [
         { name: 'No Data', value: 1, color: '#9ca3af' }
       ];
     }
-    
+   
     return [
       { name: 'Male', value: male, color: '#3b82f6' },
       { name: 'Female', value: female, color: '#ec4899' }
@@ -727,7 +722,7 @@ function App() {
 
   const getTopBooks = () => {
     if (!allSheets || !allSheets.sheets) return [];
-    
+   
     return Object.keys(allSheets.sheets)
       .map(sheetName => ({
         name: sheetName,
@@ -739,16 +734,16 @@ function App() {
 
   const getRecentActivity = () => {
     if (!allSheets || !allSheets.sheets) return [];
-    
+   
     const recentRecords = [];
-    
+   
     Object.keys(allSheets.sheets).forEach(sheetName => {
       const sheetData = allSheets.sheets[sheetName];
       if (sheetData && sheetData.data) {
         const headers = sheetData.headers;
         const childNameIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('name of child'));
         const regDateIndex = headers.findIndex(h => h?.toString().toLowerCase().includes('date of registration'));
-        
+       
         const lastFive = sheetData.data.slice(-5);
         for (let i = 0; i < lastFive.length; i++) {
           recentRecords.push({
@@ -760,13 +755,13 @@ function App() {
         }
       }
     });
-    
+   
     return recentRecords.slice(-10).reverse();
   };
 
   const renderFormField = (header, value, onChange, isEdit = false) => {
     const headerLower = header.toLowerCase();
-    
+   
     if (isSexField(header)) {
       return (
         <select
@@ -780,10 +775,10 @@ function App() {
         </select>
       );
     }
-    
+   
     if (isDateField(header)) {
       let dateValue = value || '';
-      
+     
       return (
         <input
           type="date"
@@ -793,9 +788,9 @@ function App() {
         />
       );
     }
-    
+   
     const isLcrField = header.toLowerCase().includes('lcr') || header.toLowerCase().includes('registry number');
-    
+   
     return (
       <input
         type="text"
@@ -855,7 +850,7 @@ function App() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           duration: 3000,
@@ -880,19 +875,19 @@ function App() {
           },
         }}
       />
-      
+     
       {/* Sidebar */}
       <aside className="w-80 fixed h-full overflow-hidden shadow-xl flex flex-col" style={{ background: 'rgba(26, 42, 79, 0.92)' }}>
         <div className="p-6 border-b border-white/30">
           <h2 className="text-2xl font-bold mb-1 text-white">📊 LCR Registry</h2>
           <p className="text-sm text-white">Birth Records System</p>
         </div>
-        
+       
         <div className="p-4 pb-2">
-          <button 
+          <button
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mb-2 ${
-              activeView === "dashboard" 
-                ? "bg-white/40 border-l-4 border-blue-600 text-gray-800" 
+              activeView === "dashboard"
+                ? "bg-white/40 border-l-4 border-blue-600 text-gray-800"
                 : "hover:bg-white/30 text-gray-700"
             }`}
             onClick={goToDashboard}
@@ -900,18 +895,18 @@ function App() {
             <span className="text-xl">📈</span>
             <span className="text-white">Dashboard</span>
           </button>
-          
+         
           <div className="h-px bg-gray-400/30 my-3"></div>
-          
+         
           <h3 className="text-xs uppercase tracking-wider text-white mb-2 px-3">Registry Books</h3>
         </div>
-        
+       
         <div className="px-4 pb-4 overflow-y-auto custom-scrollbar flex-1">
           <div className="space-y-1">
             <button
               className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all font-semibold ${
-                activeView === "sheet" && isAllBooks 
-                  ? "bg-white/40 border-l-4 border-yellow-600" 
+                activeView === "sheet" && isAllBooks
+                  ? "bg-white/40 border-l-4 border-yellow-600"
                   : "hover:bg-white/30"
               }`}
               onClick={fetchAllBooks}
@@ -920,15 +915,15 @@ function App() {
               <span className="flex-1 text-left text-white">All Registry Books</span>
               <span className="bg-gray-500/30 px-2 py-0.5 rounded-full text-xs text-white">{stats.totalRecords}</span>
             </button>
-            
+           
             {sheetNames.map((sheetName) => {
               const recordCount = allSheets.sheets[sheetName]?.totalRecords || 0;
               return (
                 <button
                   key={sheetName}
                   className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${
-                    activeView === "sheet" && activeSheet?.name === sheetName && !isAllBooks 
-                      ? "bg-white/40 border-l-4 border-blue-600" 
+                    activeView === "sheet" && activeSheet?.name === sheetName && !isAllBooks
+                      ? "bg-white/40 border-l-4 border-blue-600"
                       : "hover:bg-white/30"
                   }`}
                   onClick={() => fetchSpecificSheet(sheetName)}
@@ -953,29 +948,12 @@ function App() {
                   <h1 className="text-3xl font-bold text-gray-800 mb-2">Data Analytics Dashboard</h1>
                   <p className="text-gray-600">Comprehensive insights and analytics for LCR Registry Birth Records</p>
                 </div>
-                <div className="flex gap-3">
-                  <button 
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-md"
-                    onClick={refreshData}
-                  >
-                    <span>🔄</span> Refresh Data
-                  </button>
-                  <button 
-                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2 shadow-md"
-                    onClick={async () => {
-                      toast.loading("Clearing cache...", { id: "clear-cache" });
-                      try {
-                        await fetch('/api/sheets/clear-cache', { method: 'POST' });
-                        await fetchAllSheets();
-                        toast.success("Cache cleared! Data refreshed.", { id: "clear-cache" });
-                      } catch (err) {
-                        toast.error("Failed to clear cache", { id: "clear-cache" });
-                      }
-                    }}
-                  >
-                    <span>🗑️</span> Clear Cache
-                  </button>
-                </div>
+                <button
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-md"
+                  onClick={refreshData}
+                >
+                  <span>🔄</span> Refresh Data
+                </button>
               </div>
             </div>
 
@@ -988,7 +966,7 @@ function App() {
                 <h3 className="text-gray-600 text-sm font-medium">Total Registry Books</h3>
                 <p className="text-xs text-gray-400 mt-1">Complete collection</p>
               </div>
-              
+             
               <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
                 <div className="flex items-center justify-between mb-4">
                   <div className="text-4xl text-green-600">
@@ -1001,7 +979,7 @@ function App() {
                 <h3 className="text-gray-600 text-sm font-medium">Total Birth Records</h3>
                 <p className="text-xs text-gray-400 mt-1">Registered births</p>
               </div>
-              
+             
               <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
                 <div className="flex items-center justify-between mb-4">
                   <div className="text-4xl text-purple-600">📊</div>
@@ -1010,7 +988,7 @@ function App() {
                 <h3 className="text-gray-600 text-sm font-medium">Avg. Records per Book</h3>
                 <p className="text-xs text-gray-400 mt-1">Average distribution</p>
               </div>
-              
+             
               <div className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
                 <div className="flex items-center justify-between mb-4">
                   <div className="text-4xl text-orange-600">📅</div>
@@ -1031,7 +1009,7 @@ function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="month" stroke="#6b7280" />
                     <YAxis stroke="#6b7280" />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
                       formatter={(value) => [`${value} registrations`, 'Count']}
                     />
@@ -1051,7 +1029,7 @@ function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="year" stroke="#6b7280" />
                     <YAxis stroke="#6b7280" />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
                       formatter={(value) => [`${value} records`, 'Count']}
                     />
@@ -1085,7 +1063,7 @@ function App() {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
                       formatter={(value) => [`${value} records`, 'Count']}
                     />
@@ -1104,7 +1082,7 @@ function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis type="number" stroke="#6b7280" />
                     <YAxis type="category" dataKey="name" stroke="#6b7280" width={80} tick={{ fontSize: 11 }} />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: 'white', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
                       formatter={(value) => [`${value} records`, 'Count']}
                     />
@@ -1122,7 +1100,7 @@ function App() {
                 <p className="text-3xl font-bold mb-2">{stats.totalRecords.toLocaleString()}</p>
                 <p className="text-blue-100 text-sm">Across {stats.totalSheets} registry books</p>
               </div>
-              
+             
               <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white shadow-lg">
                 <div className="text-3xl mb-3">📈</div>
                 <h4 className="font-bold text-lg mb-2">Peak Registration Month</h4>
@@ -1131,7 +1109,7 @@ function App() {
                 </p>
                 <p className="text-purple-100 text-sm">Highest monthly average</p>
               </div>
-              
+             
               <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
                 <div className="text-3xl mb-3">⭐</div>
                 <h4 className="font-bold text-lg mb-2">Largest Registry Book</h4>
@@ -1156,13 +1134,13 @@ function App() {
                   <p className="text-gray-600 mt-1">Total Records: {totalRecords.toLocaleString()}</p>
                 </div>
                 <div className="flex gap-3">
-                  <button 
+                  <button
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-md"
                     onClick={refreshData}
                   >
                     <span>🔄</span> Refresh
                   </button>
-                  <button 
+                  <button
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 shadow-md"
                     onClick={openAddModal}
                   >
@@ -1171,7 +1149,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              
+             
               <div className="relative mb-4">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
                 <input
@@ -1182,7 +1160,7 @@ function App() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
                 {searchTerm && (
-                  <button 
+                  <button
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     onClick={() => setSearchTerm("")}
                   >
@@ -1190,11 +1168,11 @@ function App() {
                   </button>
                 )}
               </div>
-              
+             
               {availableMonths.length > 0 && (
                 <div className="flex flex-wrap items-center gap-4 p-4 bg-gray-50 rounded-lg">
                   <label className="font-semibold text-gray-700">Filter by Month:</label>
-                  <select 
+                  <select
                     className="px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
@@ -1206,7 +1184,7 @@ function App() {
                       </option>
                     ))}
                   </select>
-                  
+                 
                   {(selectedMonth !== "all" || searchTerm) && (
                     <div className="flex items-center gap-3 bg-blue-50 px-4 py-2 rounded-lg">
                       <span className="text-sm text-blue-700">
@@ -1217,7 +1195,7 @@ function App() {
                       <span className="bg-blue-600 text-white px-2 py-0.5 rounded-full text-xs">
                         {totalFilteredRecords} result(s)
                       </span>
-                      <button 
+                      <button
                         className="text-sm text-red-600 hover:text-red-700 font-medium"
                         onClick={() => {
                           setSelectedMonth("all");
@@ -1263,13 +1241,13 @@ function App() {
                           <td className="px-4 py-3 text-sm font-medium text-gray-800">{row.childName || "—"}</td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">
-                              <button 
+                              <button
                                 className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition"
                                 onClick={() => openModal(row)}
                               >
                                 View Details
                               </button>
-                              <button 
+                              <button
                                 className="px-3 py-1 bg-yellow-500 text-white rounded-lg text-sm hover:bg-yellow-600 transition"
                                 onClick={() => {
                                   const sheetName = isAllBooks ? row.bookName : activeSheet?.name;
@@ -1278,7 +1256,7 @@ function App() {
                               >
                                 ✏️ Edit
                               </button>
-                              <button 
+                              <button
                                 className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition"
                                 onClick={() => openPrintModal(row)}
                               >
@@ -1297,7 +1275,7 @@ function App() {
                 <div className="text-6xl mb-4">🔍</div>
                 <p className="text-gray-600 mb-4">No records found matching your search criteria.</p>
                 {(selectedMonth !== "all" || searchTerm) && (
-                  <button 
+                  <button
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
                     onClick={() => {
                       setSelectedMonth("all");
@@ -1567,7 +1545,7 @@ function App() {
                 <div>
                   <h2 className="text-2xl font-bold">Personal Information</h2>
                 </div>
-                <button 
+                <button
                   className="text-2xl hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition"
                   onClick={closeModal}
                 >
@@ -1575,7 +1553,7 @@ function App() {
                 </button>
               </div>
             </div>
-            
+           
             <div className="p-6 overflow-y-auto flex-1">
               <div className="flex items-center gap-4 mb-6 pb-4 border-b border-gray-200">
                 <div className="text-6xl">
@@ -1585,25 +1563,25 @@ function App() {
                 </div>
                 <div>
                   <h3 className="text-2xl font-bold text-gray-800">
-                    {selectedRecord.fullRecord.find((_, idx) => 
+                    {selectedRecord.fullRecord.find((_, idx) =>
                       selectedRecord.headers?.[idx]?.toLowerCase().includes('name of child')
                     ) || "Unknown"}
                   </h3>
                 </div>
               </div>
-              
+             
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <h4 className="text-lg font-semibold text-blue-600 mb-3 flex items-center gap-2">
                     <span>📋</span> Personal Details
                   </h4>
                 </div>
-                
+               
                 {selectedRecord.fullRecord.map((value, index) => {
                   const header = selectedRecord.headers?.[index] || `Field ${index + 1}`;
                   if (value && value.toString().trim()) {
                     if (isAllBooks && header === "Book Name") return null;
-                    
+                   
                     let icon = "📄";
                     const headerLower = header.toLowerCase();
                     if (headerLower.includes('name')) icon = "👤";
@@ -1617,7 +1595,7 @@ function App() {
                     else if (headerLower.includes('mother')) icon = "👩";
                     else if (headerLower.includes('father')) icon = "👨";
                     else if (headerLower.includes('nationality')) icon = "🌍";
-                    
+                   
                     return (
                       <div className="bg-gray-50 rounded-lg p-3 hover:shadow-md transition group" key={index}>
                         <div className="flex items-start gap-3">
@@ -1638,9 +1616,9 @@ function App() {
                 })}
               </div>
             </div>
-            
+           
             <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 flex-shrink-0">
-              <button 
+              <button
                 className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition flex items-center gap-2"
                 onClick={() => {
                   closeModal();
@@ -1654,7 +1632,7 @@ function App() {
               >
                 <span>✏️</span> Edit Record
               </button>
-              <button 
+              <button
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
                 onClick={closeModal}
               >
@@ -1675,7 +1653,7 @@ function App() {
                   <h2 className="text-2xl font-bold">Add New Birth Record</h2>
                   <p className="text-green-100 text-sm mt-1">Fill in the details below</p>
                 </div>
-                <button 
+                <button
                   className="text-2xl hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition"
                   onClick={closeAddModal}
                 >
@@ -1683,7 +1661,7 @@ function App() {
                 </button>
               </div>
             </div>
-            
+           
             <div className="p-6 overflow-y-auto flex-1">
               {isAllBooks && (
                 <div className="mb-6">
@@ -1701,7 +1679,7 @@ function App() {
                   <p className="text-xs text-gray-500 mt-1">Choose which registry book this record belongs to</p>
                 </div>
               )}
-              
+             
               {((isAllBooks && selectedSheetForAdd) || (!isAllBooks && selectedSheetForAdd)) && (
                 <div>
                   <div className="mb-4 p-3 bg-blue-50 rounded-lg">
@@ -1726,7 +1704,7 @@ function App() {
                   </div>
                 </div>
               )}
-              
+             
               {isAllBooks && !selectedSheetForAdd && (
                 <div className="text-center py-8 text-gray-500">
                   <p className="text-lg">📚</p>
@@ -1734,15 +1712,15 @@ function App() {
                 </div>
               )}
             </div>
-            
+           
             <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 flex-shrink-0">
-              <button 
+              <button
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
                 onClick={closeAddModal}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 className={`px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 ${(!selectedSheetForAdd) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 onClick={handleAddRecord}
                 disabled={!selectedSheetForAdd}
@@ -1764,7 +1742,7 @@ function App() {
                   <h2 className="text-2xl font-bold">Edit Birth Record</h2>
                   <p className="text-yellow-100 text-sm mt-1">Update the information below</p>
                 </div>
-                <button 
+                <button
                   className="text-2xl hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition"
                   onClick={closeEditModal}
                 >
@@ -1772,7 +1750,7 @@ function App() {
                 </button>
               </div>
             </div>
-            
+           
             <div className="p-6 overflow-y-auto flex-1">
               <div className="mb-4 p-3 bg-yellow-50 rounded-lg">
                 <p className="text-sm text-yellow-700">
@@ -1780,13 +1758,13 @@ function App() {
                 </p>
                 <p className="text-xs text-gray-500 mt-1">⚠️ Make sure you're editing the correct record</p>
               </div>
-              
+             
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {editingRecord.headers?.map((header, idx) => {
                   if (isAllBooks && header === 'Book Name') return null;
                   if (header && header.trim()) {
                     const value = editingRecord.fullRecord?.[header] || '';
-                    
+                   
                     return (
                       <div className="form-group" key={idx}>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">{header}</label>
@@ -1802,9 +1780,9 @@ function App() {
                 })}
               </div>
             </div>
-            
+           
             <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between gap-3 flex-shrink-0">
-              <button 
+              <button
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
                 onClick={() => {
                   const sheetName = isAllBooks ? editingRecord.bookName : activeSheet?.name;
@@ -1816,13 +1794,13 @@ function App() {
                 🗑️ Delete Record
               </button>
               <div className="flex gap-3">
-                <button 
+                <button
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
                   onClick={closeEditModal}
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition flex items-center gap-2"
                   onClick={handleUpdateRecord}
                 >
